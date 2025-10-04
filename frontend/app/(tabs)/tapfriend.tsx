@@ -1,24 +1,47 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { View, Text, StyleSheet, Pressable, Alert } from "react-native";
 import { Stack } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useNFC } from "../../hooks/useNFC";
 
 export default function TapFriendScreen() {
-  const [isScanning, setIsScanning] = useState(false);
   const [lastAddedFriend, setLastAddedFriend] = useState<string | null>(null);
 
-  const handleStartTap = () => {
-    setIsScanning(true);
-    // Mock NFC tap - in real app would use react-native-nfc-manager
-    setTimeout(() => {
-      setIsScanning(false);
-      setLastAddedFriend("Sarah Chen");
-      Alert.alert("Success", "You and @sarah_c are now friends! 🎉");
-    }, 2000);
+  // Handle NFC tag detection
+  const handleTagDetected = useCallback((tag: any) => {
+    console.log("NFC Tag detected:", tag);
+
+    // In a real app, you would:
+    // 1. Extract user UUID from tag
+    // 2. Call API: POST /friends/tap with { me_user_id, other_user_uuid }
+    // 3. Update UI with friend's info
+
+    // For now, mock the friend addition
+    const friendName = tag.decodedText || "New Friend";
+    setLastAddedFriend(friendName);
+
+    // In production, you'd get the friend's name from the API response
+    Alert.alert("Success", `You and ${friendName} are now friends! 🎉`);
+  }, []);
+
+  const { isScanning, isSupported, startScanning, stopScanning } =
+    useNFC(handleTagDetected);
+
+  const handleStartTap = async () => {
+    if (!isSupported) {
+      Alert.alert(
+        "NFC Not Available",
+        "NFC is not supported on this device or in the simulator. Please test on a physical device with NFC enabled.",
+        [{ text: "OK" }]
+      );
+      return;
+    }
+
+    await startScanning();
   };
 
-  const handleCancelScan = () => {
-    setIsScanning(false);
+  const handleCancelScan = async () => {
+    await stopScanning();
   };
 
   return (
@@ -59,11 +82,13 @@ export default function TapFriendScreen() {
               <Text style={styles.requirementsTitle}>Requirements:</Text>
               <View style={styles.requirementItem}>
                 <MaterialCommunityIcons
-                  name="check-circle"
+                  name={isSupported ? "check-circle" : "close-circle"}
                   size={20}
-                  color="#10b981"
+                  color={isSupported ? "#10b981" : "#ef4444"}
                 />
-                <Text style={styles.requirementText}>NFC must be enabled</Text>
+                <Text style={styles.requirementText}>
+                  NFC {isSupported ? "is available" : "not supported"}
+                </Text>
               </View>
               <View style={styles.requirementItem}>
                 <MaterialCommunityIcons
