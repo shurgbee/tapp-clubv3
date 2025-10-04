@@ -13,6 +13,7 @@ import {
 import { useLocalSearchParams, Stack } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import dayjs from "dayjs";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 // Mock messages data
 const mockMessages: { [key: string]: any[] } = {
@@ -139,19 +140,22 @@ export default function ChatDetailScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
+    <>
+    <SafeAreaView
       style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={90}
-    >
+      mode="padding"
+      >
       <Stack.Screen
         options={{
           title: groupName,
         }}
       />
-
-      {/* Messages List */}
-      <FlatList
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={90}
+      >
+        <FlatList
         data={messages}
         keyExtractor={(item) => item.id}
         style={styles.messagesList}
@@ -230,17 +234,19 @@ export default function ChatDetailScreen() {
           />
         </Pressable>
       </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f9fafb",
+    backgroundColor: "#ffffff",
   },
   messagesList: {
-    flex: 1,
+    // flex: 1,
   },
   messagesContent: {
     padding: 16,
