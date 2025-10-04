@@ -1,10 +1,54 @@
 {
   "expo": {
-    "scheme": "acme",
+    "name": "TappClub",
+    "slug": "tapp-clubv3",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "scheme": "tappclub",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#6366f1"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tappclub.app",
+      "infoPlist": {
+        "NFCReaderUsageDescription": "This app uses NFC to connect with friends by tapping devices together"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#6366f1"
+      },
+      "package": "com.tappclub.app",
+      "permissions": ["android.permission.NFC"]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app needs access to your photos to set event covers and profile pictures."
+        }
+      ],
+      [
+        "react-native-nfc-manager",
+        {
+          "nfcPermission": "Allow TappClub to use NFC to connect with friends"
+        }
+      ]
     ],
-    "name": "tapp-clubv3",
-    "slug": "tapp-clubv3"
+    "experiments": {
+      "typedRoutes": true
+    }
   }
 }
