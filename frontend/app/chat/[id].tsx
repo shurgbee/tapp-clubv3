@@ -32,6 +32,8 @@ interface MessageWithUI extends ChatMessage {
 
 // Larry's user ID - this should match the backend's Larry user
 const LARRY_USER_ID = "00000000-0000-0000-0000-000000000001";
+const LARRY_AVATAR_URL =
+  "https://cdn.discordapp.com/attachments/1418061830181359707/1424427716182282320/image.png?ex=68e3e930&is=68e297b0&hm=dcc3f1c6deef96ef7df8744797a57454cae09cfb2e0e626aca8cba4e6039d5d4&";
 
 export default function ChatDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -55,7 +57,12 @@ export default function ChatDetailScreen() {
         ...msg,
         id: `${msg.poster_id}-${msg.dateTime}-${index}`,
         isMe: msg.poster_id === uuid,
-        posterPfp: `https://api.dicebear.com/7.x/avataaars/png?seed=${msg.poster_id}`,
+        posterPfp:
+          msg.poster_id === LARRY_USER_ID ||
+          (typeof msg.poster_name === "string" &&
+            msg.poster_name.toLowerCase().includes("larry"))
+            ? LARRY_AVATAR_URL
+            : `https://api.dicebear.com/7.x/avataaars/png?seed=${msg.poster_id}`,
       }));
 
       setMessages(messagesWithUI);
@@ -139,7 +146,7 @@ export default function ChatDetailScreen() {
         dateTime: new Date().toISOString(),
         id: `larry-${Date.now()}`,
         isMe: false,
-        posterPfp: "https://api.dicebear.com/7.x/bottts/png?seed=larry",
+        posterPfp: LARRY_AVATAR_URL,
       };
 
       setMessages((prev) => [...prev, larryMessageWithUI]);
@@ -163,7 +170,7 @@ export default function ChatDetailScreen() {
         dateTime: new Date().toISOString(),
         id: `larry-error-${Date.now()}`,
         isMe: false,
-        posterPfp: "https://api.dicebear.com/7.x/bottts/png?seed=larry",
+        posterPfp: LARRY_AVATAR_URL,
       };
 
       setMessages((prev) => [...prev, errorMessage]);
@@ -268,9 +275,7 @@ export default function ChatDetailScreen() {
         {larryTyping && (
           <View style={styles.typingIndicator}>
             <Image
-              source={{
-                uri: "https://api.dicebear.com/7.x/bottts/png?seed=larry",
-              }}
+              source={{ uri: LARRY_AVATAR_URL }}
               style={styles.typingAvatar}
             />
             <View style={styles.typingBubble}>
