@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  # FastAPI Backend Service
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tapp-club-api
+    ports:
+      - "8000:8000"
+    environment:
+      # Environment variables (use .env file or pass directly)
+      - DATABASE_URL=${DATABASE_URL}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
+    env_file:
+      - .env
+    restart: unless-stopped
+    networks:
+      - tapp-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Optional: PostgreSQL database (if not using Neon)
+  # Uncomment if you want to run PostgreSQL locally
+  # db:
+  #   image: postgres:15-alpine
+  #   container_name: tapp-club-db
+  #   environment:
+  #     POSTGRES_USER: tappuser
+  #     POSTGRES_PASSWORD: tapppassword
+  #     POSTGRES_DB: tappdb
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   networks:
+  #     - tapp-network
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U tappuser"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+networks:
+  tapp-network:
+    driver: bridge
+
+# Uncomment if using local PostgreSQL
+# volumes:
+#   postgres_data:

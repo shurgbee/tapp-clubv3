@@ -14,6 +14,7 @@ from vertexai.preview.generative_models import GenerativeModel
 import asyncpg
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, HttpUrl, Field
 import uuid
 # Load environment variables from .env file
@@ -146,6 +147,7 @@ async def run_gemini_agent(prompt: str) -> str:
 
 DB_POOL = None
 
+from typing import AsyncGenerator
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -155,29 +157,14 @@ async def lifespan(app: FastAPI):
     try:
         DB_POOL = await asyncpg.create_pool(dsn=DATABASE_URL, min_size=1, max_size=10)
         print("Database connection pool created successfully.")
+        yield
     except Exception as e:
         print(f"Error creating database connection pool: {e}")
-
-@app.on_event("shutdown")
-async def shutdown():
-    if DB_POOL:
-        await DB_POOL.close()
-        print("Database connection pool closed.")
-
-# ==================================================================
-# --- FIX 1: RE-ADDED THE MISSING get_db_connection FUNCTION ---
-# This function must be defined before the API endpoints that use it.
-# ==================================================================
-from typing import AsyncGenerator
-
-async def get_db_connection() -> AsyncGenerator[asyncpg.Connection, None]:
-        
-        yield 
+        yield
     finally:
         if DB_POOL:
             print("Application shutdown: Closing database connection pool.")
             await DB_POOL.close()
-
 
 app = FastAPI(
     title="TAPP Club API",
@@ -185,20 +172,22 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Configure CORS for frontend access
+origins = [
+    "http://localhost:8081",  # Local Expo
+    "http://localhost:19006",  # Local Expo web
+    "*",  # Allow all origins (update for production)
+]
 
-async def get_db_connection() -> asyncpg.Connection:
-    """Dependency to get a connection from the pool for an endpoint."""
-    if not DB_POOL:
-        raise HTTPException(status_code=503, detail="Database connection pool is not available.")
-    async with DB_POOL.acquire() as connection:
-        yield connection
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-
-
-
-
-
-async def get_db_connection() -> asyncpg.Connection:
+async def get_db_connection() -> AsyncGenerator[asyncpg.Connection, None]:
     """Dependency to get a connection from the pool."""
     if not DB_POOL:
         raise HTTPException(status_code=503, detail="Database connection pool is not available.")
@@ -479,6 +468,26 @@ class UserTapRequest(BaseModel):
 class UserTapResponse(BaseModel):
     status: str
     message: str
+
+# Health check endpoint for Docker and load balancers
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for monitoring."""
+    return {
+        "status": "healthy",
+        "service": "TAPP Club API",
+        "version": "1.0.0"
+    }
+
+@app.get("/")
+async def root():
+    """Root endpoint with API information."""
+    return {
+        "message": "TAPP Club API",
+        "version": "1.0.0",
+        "docs": "/docs",
+        "health": "/health"
+    }
 
 @app.get("/users/{user_id}/groups", response_model=List[GroupPreview])
 async def get_user_groups(
