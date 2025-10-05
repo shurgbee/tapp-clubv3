@@ -8,21 +8,13 @@ import {
   Animated,
   Dimensions,
   Easing,
+  ActivityIndicator,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 
-interface NFCUserData {
-  uuid: string;
-  name: string;
-  slug?: string;
-}
-
-interface NFCScanPopupProps {
+interface FriendSearchPopupProps {
   visible: boolean;
-  onClose: () => void;
-  friendData: NFCUserData | null;
-  onSendMessage?: () => void;
-  onViewProfile?: () => void;
+  onCancel: () => void;
 }
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -36,7 +28,7 @@ const MarqueeRow: React.FC<{
   const translateX = React.useRef(new Animated.Value(0)).current;
   const translateY = React.useRef(new Animated.Value(-200)).current;
   const opacity = React.useRef(new Animated.Value(0)).current;
-  const marqueeText = "NEW FRIEND ";
+  const marqueeText = "SEARCHING ";
   const repeatedText = marqueeText.repeat(30);
 
   React.useEffect(() => {
@@ -67,7 +59,7 @@ const MarqueeRow: React.FC<{
         Animated.loop(
           Animated.timing(translateX, {
             toValue: direction === "left" ? -SCREEN_WIDTH * 1.5 : 0,
-            duration: 5000,
+            duration: 8000,
             easing: Easing.linear,
             useNativeDriver: true,
           })
@@ -107,39 +99,55 @@ const MarqueeRow: React.FC<{
   );
 };
 
-export function NFCScanPopup({
+export function FriendSearchPopup({
   visible,
-  onClose,
-  friendData,
-  onSendMessage,
-  onViewProfile,
-}: NFCScanPopupProps) {
+  onCancel,
+}: FriendSearchPopupProps) {
   const [scaleAnim] = React.useState(new Animated.Value(0));
+  const [pulseAnim] = React.useState(new Animated.Value(1));
 
   React.useEffect(() => {
     if (visible) {
+      // Scale in animation
       Animated.spring(scaleAnim, {
         toValue: 1,
         tension: 50,
         friction: 7,
         useNativeDriver: true,
       }).start();
+
+      // Pulse animation
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.1,
+            duration: 1000,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 1000,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
     } else {
       scaleAnim.setValue(0);
+      pulseAnim.setValue(1);
     }
-  }, [visible, scaleAnim]);
-
-  if (!friendData) return null;
+  }, [visible, scaleAnim, pulseAnim]);
 
   return (
     <Modal
       visible={visible}
       transparent
       animationType="fade"
-      onRequestClose={onClose}
+      onRequestClose={onCancel}
       statusBarTranslucent
     >
-      <Pressable style={styles.modalOverlay} onPress={onClose}>
+      <Pressable style={styles.modalOverlay} onPress={onCancel}>
         <View style={styles.container}>
           {/* Marquee Rows */}
           <View style={styles.marqueeWrapper}>
@@ -155,37 +163,43 @@ export function NFCScanPopup({
             <MarqueeRow direction="right" index={9} visible={visible} />
           </View>
 
-          {/* Centered Profile Picture */}
+          {/* Centered Search Indicator */}
           <Animated.View
             style={[
-              styles.profileContainer,
+              styles.searchContainer,
               { transform: [{ scale: scaleAnim }] },
             ]}
           >
-            <Pressable onPress={(e) => e.stopPropagation()}>
-              <View style={styles.profilePicture}>
-                <View style={styles.profileCircle}>
-                  <Text style={styles.profileInitial}>
-                    {friendData.name.charAt(0).toUpperCase()}
-                  </Text>
-                </View>
-              </View>
-              <Text style={styles.profileName}>{friendData.name}</Text>
-            </Pressable>
+            <View style={styles.searchContent}>
+              <Animated.View
+                style={[
+                  styles.searchCircle,
+                  { transform: [{ scale: pulseAnim }] },
+                ]}
+              >
+                <ActivityIndicator size="large" color="#ffffff" />
+              </Animated.View>
+              <Text style={styles.searchText}>SEARCHING...</Text>
+
+              {/* Cancel Button */}
+              <Pressable style={styles.cancelButton} onPress={onCancel}>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </Pressable>
+            </View>
           </Animated.View>
 
-          {/* Left Gradient Fade */}
+          {/* Left Gradient Fade with Pastel Blue */}
           <LinearGradient
-            colors={["rgba(0,0,0,0.9)", "transparent"]}
+            colors={["rgba(167, 199, 231, 0.9)", "transparent"]}
             start={{ x: 0, y: 0.5 }}
             end={{ x: 1, y: 0.5 }}
             style={styles.gradientLeft}
             pointerEvents="none"
           />
 
-          {/* Right Gradient Fade */}
+          {/* Right Gradient Fade with Pastel Blue */}
           <LinearGradient
-            colors={["transparent", "rgba(0,0,0,0.9)"]}
+            colors={["transparent", "rgba(167, 199, 231, 0.9)"]}
             start={{ x: 0, y: 0.5 }}
             end={{ x: 1, y: 0.5 }}
             style={styles.gradientRight}
@@ -200,7 +214,7 @@ export function NFCScanPopup({
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.95)",
+    backgroundColor: "rgba(167, 199, 231, 0.95)",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -231,17 +245,30 @@ const styles = StyleSheet.create({
   marqueeText: {
     fontSize: 96,
     fontWeight: "900",
-    color: "#ff0000",
+    color: "#1e3a8a",
     letterSpacing: 4,
     textTransform: "uppercase",
+    opacity: 0.3,
   },
-  profileContainer: {
+  searchContainer: {
     zIndex: 10,
     alignItems: "center",
     justifyContent: "center",
   },
-  profilePicture: {
-    shadowColor: "#6366f1",
+  searchContent: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  searchCircle: {
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    backgroundColor: "#A7C7E7",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 6,
+    borderColor: "rgba(255, 255, 255, 0.4)",
+    shadowColor: "#87CEEB",
     shadowOffset: {
       width: 0,
       height: 20,
@@ -250,25 +277,10 @@ const styles = StyleSheet.create({
     shadowRadius: 30,
     elevation: 15,
   },
-  profileCircle: {
-    width: 240,
-    height: 240,
-    borderRadius: 120,
-    backgroundColor: "#6366f1",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 6,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-  },
-  profileInitial: {
-    fontSize: 80,
-    fontWeight: "900",
-    color: "#fff",
-  },
-  profileName: {
+  searchText: {
     fontSize: 32,
     fontWeight: "800",
-    color: "#fff",
+    color: "#5B9BD5",
     textAlign: "center",
     textTransform: "uppercase",
     letterSpacing: 2,
@@ -289,5 +301,29 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: 120,
     zIndex: 5,
+  },
+  cancelButton: {
+    marginTop: 32,
+    paddingHorizontal: 48,
+    paddingVertical: 16,
+    backgroundColor: "#ffffff",
+    borderRadius: 30,
+    borderWidth: 2,
+    borderColor: "#5B9BD5",
+    shadowColor: "#1e3a8a",
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  cancelButtonText: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#1e3a8a",
+    textTransform: "uppercase",
+    letterSpacing: 1,
   },
 });

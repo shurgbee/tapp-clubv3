@@ -1,140 +1,93 @@
-import { useState, useCallback, useEffect } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  Alert,
-  Animated,
-  Modal,
-} from "react-native";
+import { View, Text, StyleSheet, Pressable } from "react-native";
 import { Stack } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useNFCFriendTap } from "../../hooks/useNFCFriendTap";
-import { NFCScanPopup } from "../../components/NFCScanPopup";
-import type { User } from "../../types";
-
-// Mock current user - replace with actual auth context in production
-const MOCK_CURRENT_USER: User = {
-  user_id: "user-123",
-  name: "Demo User",
-  slug: "demo_user",
-  pfp: undefined,
-};
-
-// Mock friend data for testing - these would come from other users' NFC tags
-// You can write these to NFC tags for testing different scenarios
-const MOCK_FRIENDS = [
-  { uuid: "user-456", name: "Alice Johnson", slug: "alice_j" },
-  { uuid: "user-789", name: "Bob Smith", slug: "bobsmith" },
-  { uuid: "user-321", name: "Carol Davis", slug: "carol_d" },
-];
+import { useCallback, useState } from "react";
+import { useNFCRead } from "@/hooks/useNFCRead";
+import { useNFCEmulate } from "@/hooks/useNFCEmulate";
+import { FriendSuccessPopup, FriendSearchPopup } from "@/components";
 
 export default function TapFriendScreen() {
-  const [lastAddedFriend, setLastAddedFriend] = useState<{
-    name: string;
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
+  const [showSearchPopup, setShowSearchPopup] = useState(false);
+  const [friendData, setFriendData] = useState<{
     uuid: string;
+    name: string;
     slug?: string;
   } | null>(null);
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [showNewPopup, setShowNewPopup] = useState(false);
-  const [pulseAnim] = useState(new Animated.Value(1));
+  // Initialize NFC reading hook
+  const { isSupported, isEnabled, isReading, readHCEDevice, cancelRead } =
+    useNFCRead({
+      autoInit: true,
+      showAlerts: true, // Show alerts for HCE reading
+    });
 
-  // Handle friend detection
-  const handleFriendDetected = useCallback(
-    async (friendData: { uuid: string; name: string; slug?: string }) => {
-      console.log("Friend detected:", friendData);
+  const handleRead = useCallback(() => {
+    console.log("Someone tapped me!");
+    // TODO: Handle incoming friend connection
+  }, []);
 
-      // Simulate processing delay
-      await new Promise((resolve) => setTimeout(resolve, 500));
+  // Handle tapping a friend's phone (reading HCE device)
+  const handleTapFriend = useCallback(async () => {
+    try {
+      setShowSearchPopup(true);
+      const result = await readHCEDevice();
+      setShowSearchPopup(false);
 
-      // Mock successful friend addition
-      const mockFriendshipData = {
-        friendship_id: `friendship-${Date.now()}`,
-        created_at: new Date().toISOString(),
-        friend: {
-          user_id: friendData.uuid,
-          name: friendData.name,
-          slug: friendData.slug,
-          pfp: undefined, // Could add mock avatar URL here
-        },
-      };
+      if (result.success) {
+        console.log("✅ Successfully read HCE device!");
+        console.log("Content:", result.decodedText);
+        console.log("Raw data:", result.rawData);
+        // TODO: Handle friend connection with the read data
+        // Show success popup
+        setFriendData({
+          uuid: result.decodedText || "unknown",
+          name: result.decodedText || "Friend",
+          slug: undefined,
+        });
+        setShowSuccessPopup(true);
+      } else if (result.cancelled) {
+        console.log("📱 NFC read cancelled by user");
+      } else {
+        console.error("❌ Failed to read HCE device:", result.error);
+      }
+    } catch (error) {
+      console.error("Error reading HCE device:", error);
+      setShowSearchPopup(false);
+    }
+  }, [readHCEDevice]);
 
-      console.log("Mock friendship created:", mockFriendshipData);
-
-      // Update UI with friend data
-      setLastAddedFriend(friendData);
-      setShowSuccessModal(true);
-
-      // TODO: In production, replace with actual API call:
-      // const response = await fetch(`${API_BASE_URL}/friends/tap`, {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({
-      //     me_user_id: MOCK_CURRENT_USER.user_id,
-      //     other_user_uuid: friendData.uuid,
-      //   }),
-      // });
-    },
-    []
-  );
-
+  // Initialize NFC emulation hook
   const {
-    isActive,
-    isWriting,
-    isReading,
-    isSupported,
-    lastDetectedFriend,
-    startSession,
-    stopSession,
-  } = useNFCFriendTap({
-    currentUser: MOCK_CURRENT_USER,
-    onFriendDetected: handleFriendDetected,
-    autoStartOnMount: false,
+    isEmulating,
+    startEmulation,
+    stopEmulation,
+    loading: emulateLoading,
+  } = useNFCEmulate({
+    content: "TappClub Friend Connect - Test User 123",
+    onRead: handleRead,
   });
 
-  // Pulse animation for scanning state
-  useEffect(() => {
-    if (isActive) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 1.2,
-            duration: 1000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 1000,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
+  // Handle Get Tapped button press
+  const handleGetTapped = useCallback(async () => {
+    if (isEmulating) {
+      await stopEmulation();
+      setShowSearchPopup(false);
     } else {
-      pulseAnim.setValue(1);
+      setShowSearchPopup(true);
+      await startEmulation();
     }
-  }, [isActive]);
+  }, [isEmulating, startEmulation, stopEmulation]);
 
-  const handleStartTap = async () => {
-    if (!isSupported) {
-      Alert.alert(
-        "NFC Not Available",
-        "NFC is not supported on this device or in the simulator. Please test on a physical device with NFC enabled.",
-        [{ text: "OK" }]
-      );
-      return;
+  // Handle cancel from search popup
+  const handleCancelSearch = useCallback(() => {
+    setShowSearchPopup(false);
+    if (isReading) {
+      cancelRead();
     }
-
-    await startSession();
-  };
-
-  const handleCancelScan = async () => {
-    await stopSession();
-  };
-
-  const closeSuccessModal = () => {
-    setShowSuccessModal(false);
-  };
+    if (isEmulating) {
+      stopEmulation();
+    }
+  }, [isReading, isEmulating, cancelRead, stopEmulation]);
 
   return (
     <>
@@ -142,234 +95,196 @@ export default function TapFriendScreen() {
         options={{
           title: "Add Friend",
           headerRight: () => (
-            <Pressable
-              onPress={() => setShowNewPopup(true)}
-              style={{ marginRight: 16 }}
-            >
-              <MaterialCommunityIcons
-                name="test-tube"
-                size={24}
-                color="#6366f1"
-              />
-            </Pressable>
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <Pressable
+                onPress={() => setShowSearchPopup(true)}
+                style={{ padding: 8 }}
+              >
+                <MaterialCommunityIcons
+                  name="radar"
+                  size={24}
+                  color="#6366f1"
+                />
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  setFriendData({
+                    uuid: "test-123",
+                    name: "Test User",
+                    slug: "testuser",
+                  });
+                  setShowSuccessPopup(true);
+                }}
+                style={{ padding: 8 }}
+              >
+                <MaterialCommunityIcons
+                  name="account-check"
+                  size={24}
+                  color="#10b981"
+                />
+              </Pressable>
+            </View>
           ),
         }}
       />
       <View style={styles.container}>
         <View style={styles.content}>
           {/* Icon */}
-          <Animated.View
-            style={[
-              styles.iconContainer,
-              isActive && styles.iconScanning,
-              { transform: [{ scale: pulseAnim }] },
-            ]}
-          >
-            <MaterialCommunityIcons
-              name={
-                isActive
-                  ? isReading
-                    ? "nfc-search-variant"
-                    : "nfc-variant"
-                  : "nfc-tap"
-              }
-              size={80}
-              color={isActive ? "#6366f1" : "#9ca3af"}
-            />
-          </Animated.View>
-
-          {/* Status */}
-          {isActive && (
-            <View style={styles.statusBadge}>
-              <View style={styles.statusDot} />
-              <Text style={styles.statusText}>
-                {isWriting
-                  ? "Writing your profile..."
-                  : isReading
-                  ? "Reading friend's profile..."
-                  : "Ready to tap"}
-              </Text>
-            </View>
-          )}
+          <View style={styles.iconContainer}>
+            <MaterialCommunityIcons name="nfc-tap" size={80} color="#9ca3af" />
+          </View>
 
           {/* Title */}
-          <Text style={styles.title}>
-            {isActive ? "Hold devices together" : "Tap to Add Friend"}
-          </Text>
+          <Text style={styles.title}>Add Friend via NFC</Text>
 
           {/* Description */}
           <Text style={styles.description}>
-            {isActive
-              ? "Keep your devices back-to-back until the connection is established..."
-              : "Tap your phone with a friend's phone to instantly connect and share events together."}
+            Choose how to connect: "Get Tapped" lets others read your phone, or
+            "Tap Friend" to read their phone.
           </Text>
 
           {/* NFC Requirements */}
-          {!isActive && (
-            <View style={styles.requirementsCard}>
-              <Text style={styles.requirementsTitle}>Requirements:</Text>
-              <View style={styles.requirementItem}>
-                <MaterialCommunityIcons
-                  name={isSupported ? "check-circle" : "close-circle"}
-                  size={20}
-                  color={isSupported ? "#10b981" : "#ef4444"}
-                />
-                <Text style={styles.requirementText}>
-                  NFC {isSupported ? "is available" : "not supported"}
-                </Text>
-              </View>
-              <View style={styles.requirementItem}>
-                <MaterialCommunityIcons
-                  name="check-circle"
-                  size={20}
-                  color="#10b981"
-                />
-                <Text style={styles.requirementText}>
-                  Hold phones back-to-back
-                </Text>
-              </View>
-              <View style={styles.requirementItem}>
-                <MaterialCommunityIcons
-                  name="check-circle"
-                  size={20}
-                  color="#10b981"
-                />
-                <Text style={styles.requirementText}>
-                  Keep them together for 2-3 seconds
-                </Text>
-              </View>
+          <View style={styles.requirementsCard}>
+            <Text style={styles.requirementsTitle}>Status:</Text>
+            <View style={styles.requirementItem}>
+              <MaterialCommunityIcons
+                name={isSupported ? "check-circle" : "close-circle"}
+                size={20}
+                color={isSupported ? "#10b981" : "#ef4444"}
+              />
+              <Text style={styles.requirementText}>
+                NFC is {isSupported ? "available" : "not supported"}
+              </Text>
             </View>
-          )}
-
-          {/* Last Added Friend */}
-          {lastAddedFriend && !isActive && (
-            <View style={styles.successCard}>
+            <View style={styles.requirementItem}>
+              <MaterialCommunityIcons
+                name={isEnabled ? "check-circle" : "close-circle"}
+                size={20}
+                color={isEnabled ? "#10b981" : "#ef4444"}
+              />
+              <Text style={styles.requirementText}>
+                NFC is {isEnabled ? "enabled" : "disabled"}
+              </Text>
+            </View>
+            <View style={styles.requirementItem}>
               <MaterialCommunityIcons
                 name="check-circle"
-                size={24}
+                size={20}
                 color="#10b981"
               />
-              <View style={styles.successCardContent}>
-                <Text style={styles.successLabel}>Recently added:</Text>
-                <Text style={styles.successText}>{lastAddedFriend.name}</Text>
-              </View>
+              <Text style={styles.requirementText}>
+                Hold phones back-to-back
+              </Text>
             </View>
-          )}
-
-          {/* Action Button */}
-          <Pressable
-            style={[styles.actionButton, isActive && styles.cancelButton]}
-            onPress={isActive ? handleCancelScan : handleStartTap}
-          >
-            <Text style={styles.actionButtonText}>
-              {isActive ? "Cancel" : "Start Tap"}
-            </Text>
-          </Pressable>
-
-          {/* Alternative Method */}
-          {!isActive && (
-            <Pressable style={styles.alternativeButton}>
+            <View style={styles.requirementItem}>
               <MaterialCommunityIcons
-                name="qrcode-scan"
+                name="check-circle"
                 size={20}
-                color="#6366f1"
+                color="#10b981"
               />
-              <Text style={styles.alternativeButtonText}>
-                Use QR Code Instead
+              <Text style={styles.requirementText}>
+                Keep them together for 2-3 seconds
+              </Text>
+            </View>
+          </View>
+
+          {/* Action Buttons */}
+          <View style={styles.buttonContainer}>
+            {/* Get Tapped Button (HCE Emulation) */}
+            <Pressable
+              style={[
+                styles.actionButton,
+                styles.primaryButton,
+                isEmulating && styles.actionButtonActive,
+                !isSupported || !isEnabled ? styles.actionButtonDisabled : null,
+              ]}
+              onPress={handleGetTapped}
+              disabled={!isSupported || !isEnabled || emulateLoading}
+            >
+              <MaterialCommunityIcons
+                name={isEmulating ? "nfc-variant" : "contactless-payment"}
+                size={20}
+                color="#fff"
+                style={{ marginRight: 8 }}
+              />
+              <Text style={styles.actionButtonText}>
+                {isEmulating ? "Stop Emulating..." : "Get Tapped"}
               </Text>
             </Pressable>
+
+            {/* Tap Friend Button (NFC Read HCE) */}
+            <Pressable
+              style={[
+                styles.actionButton,
+                styles.secondaryButton,
+                isReading && styles.actionButtonReading,
+                !isSupported || !isEnabled ? styles.actionButtonDisabled : null,
+              ]}
+              onPress={
+                isReading
+                  ? () => {
+                      cancelRead();
+                      setShowSearchPopup(false);
+                    }
+                  : handleTapFriend
+              }
+              disabled={!isSupported || !isEnabled}
+            >
+              <MaterialCommunityIcons
+                name={isReading ? "nfc-variant" : "nfc-tap"}
+                size={20}
+                color="#fff"
+                style={{ marginRight: 8 }}
+              />
+              <Text style={styles.actionButtonText}>
+                {isReading ? "Cancel Reading..." : "Tap Friend"}
+              </Text>
+            </Pressable>
+          </View>
+
+          {/* Reading Status Indicator */}
+          {isReading && (
+            <View style={styles.readingIndicator}>
+              <MaterialCommunityIcons
+                name="wifi"
+                size={20}
+                color="#f59e0b"
+                style={{ marginRight: 8 }}
+              />
+              <Text style={styles.readingText}>
+                Hold your phone near the other device...
+              </Text>
+            </View>
+          )}
+
+          {/* Emulating Status Indicator */}
+          {isEmulating && (
+            <View style={styles.emulatingIndicator}>
+              <MaterialCommunityIcons
+                name="nfc-variant"
+                size={20}
+                color="#10b981"
+                style={{ marginRight: 8 }}
+              />
+              <Text style={styles.emulatingText}>
+                Ready to be tapped! Keep app open.
+              </Text>
+            </View>
           )}
         </View>
+
+        {/* Popups */}
+        <FriendSuccessPopup
+          visible={showSuccessPopup}
+          onClose={() => setShowSuccessPopup(false)}
+          friendData={friendData}
+        />
+
+        <FriendSearchPopup
+          visible={showSearchPopup}
+          onCancel={handleCancelSearch}
+        />
       </View>
-
-      {/* Success Modal */}
-      <Modal
-        visible={showSuccessModal}
-        transparent
-        animationType="fade"
-        onRequestClose={closeSuccessModal}
-      >
-        <Pressable style={styles.modalOverlay} onPress={closeSuccessModal}>
-          <Pressable
-            style={styles.modalContent}
-            onPress={(e) => e.stopPropagation()}
-          >
-            {/* Success Icon */}
-            <View style={styles.modalIconContainer}>
-              <MaterialCommunityIcons
-                name="check-circle"
-                size={64}
-                color="#10b981"
-              />
-            </View>
-
-            {/* Title */}
-            <Text style={styles.modalTitle}>Friend Added! 🎉</Text>
-
-            {/* Friend Info */}
-            {lastAddedFriend && (
-              <View style={styles.friendInfoCard}>
-                <View style={styles.friendAvatar}>
-                  <Text style={styles.friendAvatarText}>
-                    {lastAddedFriend.name.charAt(0).toUpperCase()}
-                  </Text>
-                </View>
-                <View style={styles.friendDetails}>
-                  <Text style={styles.friendName}>{lastAddedFriend.name}</Text>
-                  {lastAddedFriend.slug && (
-                    <Text style={styles.friendSlug}>
-                      @{lastAddedFriend.slug}
-                    </Text>
-                  )}
-                </View>
-              </View>
-            )}
-
-            {/* Description */}
-            <Text style={styles.modalDescription}>
-              You and {lastAddedFriend?.name || "your friend"} are now
-              connected! You can now see each other's events and chat together.
-            </Text>
-
-            {/* Actions */}
-            <View style={styles.modalActions}>
-              <Pressable
-                style={[styles.modalButton, styles.modalButtonPrimary]}
-                onPress={closeSuccessModal}
-              >
-                <Text style={styles.modalButtonTextPrimary}>Awesome!</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.modalButton, styles.modalButtonSecondary]}
-                onPress={() => {
-                  closeSuccessModal();
-                  // Navigate to profile or chat
-                }}
-              >
-                <MaterialCommunityIcons
-                  name="message"
-                  size={18}
-                  color="#6366f1"
-                />
-                <Text style={styles.modalButtonTextSecondary}>
-                  Send Message
-                </Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      {/* New Popup Component */}
-      <NFCScanPopup
-        visible={showNewPopup}
-        onClose={() => setShowNewPopup(false)}
-        friendData={{
-          uuid: "mock-456",
-          name: "Jane Smith",
-          slug: "janesmith",
-        }}
-      />
     </>
   );
 }
@@ -393,30 +308,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 16,
-  },
-  iconScanning: {
-    backgroundColor: "#eef2ff",
-  },
-  statusBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "#eef2ff",
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    marginBottom: 16,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "#6366f1",
-  },
-  statusText: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#6366f1",
   },
   title: {
     fontSize: 24,
@@ -457,153 +348,73 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#6b7280",
   },
-  successCard: {
+  buttonContainer: {
     flexDirection: "row",
-    alignItems: "center",
     gap: 12,
-    backgroundColor: "#f0fdf4",
-    borderRadius: 8,
-    padding: 12,
     width: "100%",
-    marginBottom: 24,
-  },
-  successCardContent: {
-    flex: 1,
-  },
-  successLabel: {
-    fontSize: 12,
-    color: "#166534",
-    marginBottom: 2,
-  },
-  successText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#166534",
   },
   actionButton: {
-    backgroundColor: "#6366f1",
+    flex: 1,
     borderRadius: 8,
     padding: 16,
-    width: "100%",
     alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
   },
-  cancelButton: {
+  primaryButton: {
+    backgroundColor: "#10b981",
+  },
+  secondaryButton: {
+    backgroundColor: "#6366f1",
+  },
+  actionButtonActive: {
+    backgroundColor: "#059669",
+  },
+  actionButtonScanning: {
     backgroundColor: "#ef4444",
   },
+  actionButtonReading: {
+    backgroundColor: "#f59e0b",
+  },
+  actionButtonDisabled: {
+    backgroundColor: "#9ca3af",
+    opacity: 0.6,
+  },
   actionButtonText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#fff",
-  },
-  alternativeButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    padding: 16,
-    marginTop: 12,
-  },
-  alternativeButtonText: {
-    fontSize: 16,
-    fontWeight: "500",
-    color: "#6366f1",
-  },
-  // Modal styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
-  },
-  modalContent: {
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 24,
-    width: "100%",
-    maxWidth: 400,
-    alignItems: "center",
-  },
-  modalIconContainer: {
-    marginBottom: 16,
-  },
-  modalTitle: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#111827",
-    textAlign: "center",
-    marginBottom: 20,
-  },
-  friendInfoCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 16,
-    backgroundColor: "#f9fafb",
-    borderRadius: 12,
-    padding: 16,
-    width: "100%",
-    marginBottom: 20,
-  },
-  friendAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#6366f1",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  friendAvatarText: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#fff",
-  },
-  friendDetails: {
-    flex: 1,
-  },
-  friendName: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#111827",
-    marginBottom: 4,
-  },
-  friendSlug: {
     fontSize: 14,
-    color: "#6b7280",
-  },
-  modalDescription: {
-    fontSize: 15,
-    color: "#6b7280",
-    textAlign: "center",
-    lineHeight: 22,
-    marginBottom: 24,
-  },
-  modalActions: {
-    width: "100%",
-    gap: 12,
-  },
-  modalButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    borderRadius: 8,
-    padding: 14,
-  },
-  modalButtonPrimary: {
-    backgroundColor: "#6366f1",
-  },
-  modalButtonSecondary: {
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-  },
-  modalButtonTextPrimary: {
-    fontSize: 16,
     fontWeight: "600",
     color: "#fff",
   },
-  modalButtonTextSecondary: {
-    fontSize: 16,
+  readingIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fef3c7",
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: "#fbbf24",
+  },
+  readingText: {
+    fontSize: 14,
     fontWeight: "600",
-    color: "#6366f1",
+    color: "#92400e",
+  },
+  emulatingIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#d1fae5",
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: "#34d399",
+  },
+  emulatingText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#065f46",
   },
 });
