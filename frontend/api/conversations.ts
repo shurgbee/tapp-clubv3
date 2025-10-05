@@ -206,3 +206,33 @@ export async function addMembersToGroup(
     throw error;
   }
 }
+
+/**
+ * Call the AI agent (Larry) with a prompt
+ */
+export async function callLarryAgent(prompt: string): Promise<string> {
+  const url = `${API_BASE_URL}/agent/?request=${encodeURIComponent(prompt)}`;
+  console.log("[API] Calling Larry agent:", url);
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+    });
+
+    if (!response.ok) {
+      const error = await response
+        .json()
+        .catch(() => ({ detail: "Failed to get AI response" }));
+      throw new Error(
+        error.detail || `Failed to get AI response: ${response.status}`
+      );
+    }
+
+    const data = await response.json();
+    console.log("[API] Larry agent response:", data);
+    return data;
+  } catch (error) {
+    console.error("[API] Error calling Larry agent:", error);
+    throw error;
+  }
+}

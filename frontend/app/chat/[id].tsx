@@ -17,13 +17,21 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import dayjs from "dayjs";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "../../contexts/AuthContext";
-import { getGroupMessages, sendMessage, ChatMessage } from "../../api";
+import {
+  getGroupMessages,
+  sendMessage,
+  ChatMessage,
+  callLarryAgent,
+} from "../../api";
 
 interface MessageWithUI extends ChatMessage {
   id: string;
   isMe: boolean;
   posterPfp?: string;
 }
+
+// Larry's user ID - this should match the backend's Larry user
+const LARRY_USER_ID = "00000000-0000-0000-0000-000000000001";
 
 export default function ChatDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -34,6 +42,7 @@ export default function ChatDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [groupName, setGroupName] = useState("Chat");
+  const [larryTyping, setLarryTyping] = useState(false);
 
   const fetchMessages = useCallback(async () => {
     if (!id || !uuid) return;
@@ -72,10 +81,12 @@ export default function ChatDetailScreen() {
     if (!inputText.trim() || !uuid || !id || sending) return;
 
     const messageText = inputText.trim();
+    const containsLarryMention = messageText.toLowerCase().includes("@larry");
     setSending(true);
     setInputText("");
 
     try {
+      // Send the user's message
       const sentMessage = await sendMessage(id, {
         user_id: uuid,
         messageType: "text",
@@ -95,12 +106,69 @@ export default function ChatDetailScreen() {
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: true });
       }, 100);
+
+      // If message contains @Larry, call the AI agent
+      if (containsLarryMention) {
+        await handleLarryResponse(messageText);
+      }
     } catch (error) {
       console.error("Error sending message:", error);
       Alert.alert("Error", "Failed to send message");
       setInputText(messageText); // Restore the message
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleLarryResponse = async (userMessage: string) => {
+    setLarryTyping(true);
+
+    try {
+      console.log("🤖 Larry is thinking...");
+
+      // Call the AI agent
+      const aiResponse = await callLarryAgent(userMessage);
+
+      // Create Larry's message (display only, not saved to backend)
+      // We don't post to backend because Larry user may not exist in DB
+      const larryMessageWithUI: MessageWithUI = {
+        poster_id: LARRY_USER_ID,
+        poster_name: "Larry (AI)",
+        messageType: "text",
+        messageContent: aiResponse,
+        dateTime: new Date().toISOString(),
+        id: `larry-${Date.now()}`,
+        isMe: false,
+        posterPfp: "https://api.dicebear.com/7.x/bottts/png?seed=larry",
+      };
+
+      setMessages((prev) => [...prev, larryMessageWithUI]);
+
+      // Scroll to bottom to show Larry's response
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+
+      console.log("🤖 Larry responded!");
+    } catch (error) {
+      console.error("Error getting Larry response:", error);
+
+      // Post an error message from Larry
+      const errorMessage: MessageWithUI = {
+        poster_id: LARRY_USER_ID,
+        poster_name: "Larry (AI)",
+        messageType: "text",
+        messageContent:
+          "Sorry, I'm having trouble processing your request right now. Please try again later! 🤖",
+        dateTime: new Date().toISOString(),
+        id: `larry-error-${Date.now()}`,
+        isMe: false,
+        posterPfp: "https://api.dicebear.com/7.x/bottts/png?seed=larry",
+      };
+
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setLarryTyping(false);
     }
   };
 
@@ -195,6 +263,26 @@ export default function ChatDetailScreen() {
             </View>
           )}
         />
+
+        {/* Larry Typing Indicator */}
+        {larryTyping && (
+          <View style={styles.typingIndicator}>
+            <Image
+              source={{
+                uri: "https://api.dicebear.com/7.x/bottts/png?seed=larry",
+              }}
+              style={styles.typingAvatar}
+            />
+            <View style={styles.typingBubble}>
+              <Text style={styles.typingText}>Larry is typing</Text>
+              <View style={styles.typingDots}>
+                <View style={styles.dot} />
+                <View style={styles.dot} />
+                <View style={styles.dot} />
+              </View>
+            </View>
+          </View>
+        )}
 
         {/* Input Bar */}
         <View style={styles.inputContainer}>
@@ -355,5 +443,41 @@ const styles = StyleSheet.create({
   },
   sendButton: {
     padding: 8,
+  },
+  typingIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  typingAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#e5e7eb",
+  },
+  typingBubble: {
+    backgroundColor: "#f3f4f6",
+    borderRadius: 16,
+    padding: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  typingText: {
+    fontSize: 14,
+    color: "#6b7280",
+    fontStyle: "italic",
+  },
+  typingDots: {
+    flexDirection: "row",
+    gap: 4,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#9ca3af",
   },
 });
