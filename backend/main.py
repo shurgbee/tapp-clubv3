@@ -1,4 +1,3 @@
-
 import os
 import uuid
 import json
@@ -46,10 +45,9 @@ except Exception as e:
     raise RuntimeError(f"Failed to initialize clients: {e}")
 
 
-
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
- 
+
 
 def search_places(query: str) -> str:
     """
@@ -196,11 +194,6 @@ async def get_db_connection() -> AsyncGenerator[asyncpg.Connection, None]:
         yield connection
 
 
-
-
-
-
-
 class ChatMessage(BaseModel):
     poster_id: uuid.UUID
     poster_name: str
@@ -230,7 +223,7 @@ class FriendRequestCreate(BaseModel):
     requester_id: uuid.UUID  
     addressee_id: uuid.UUID  
 
-    
+
 from enum import Enum
 
 class FriendRequestAction(str, Enum):
@@ -242,8 +235,6 @@ class FriendRequestUpdate(BaseModel):
     responder_id: uuid.UUID
     
     action: FriendRequestAction
-
-
 
 
 class AddEventMembersRequest(BaseModel):
@@ -276,7 +267,7 @@ class AgentResponse(BaseModel):
     message: str
     dateTime: datetime
     links: List[str]
-    
+
 
 class EventPictureCreate(BaseModel):
     uploader_id: uuid.UUID
@@ -304,8 +295,6 @@ class User(BaseModel):
 
 # --- API Endpoints ---
 # In your main.py file, replace the get_user_groups function with this one:
-
-
 
 
 class EventAttendee(BaseModel):
@@ -350,7 +339,6 @@ class UserAuthResponse(BaseModel):
     user_id: uuid.UUID
 
 
-
 class UserUpdateRequest(BaseModel):
     
     username: Optional[str] = None
@@ -376,7 +364,6 @@ class EventUpdateRequest(BaseModel):
     location: Optional[str] = None 
 
 
-
 class GroupCreateRequest(BaseModel):
     creator_id: uuid.UUID
     name: str
@@ -399,7 +386,6 @@ class GroupPreview(BaseModel):
     last_message_timestamp: Optional[datetime]
     last_message_poster_name: Optional[str]
 
-    
 
 class AddMembersRequest(BaseModel):
     user_ids: List[uuid.UUID]
@@ -407,7 +393,6 @@ class AddMembersRequest(BaseModel):
 class AddMembersResponse(BaseModel):
     message: str
     added_count: int
-
 
 
 class PostCreateRequest(BaseModel):
@@ -424,7 +409,6 @@ class PostResponse(BaseModel):
     description: Optional[str]
     created_at: datetime
     updated_at: datetime
-
 
 
 class PostPictureDetail(BaseModel):
@@ -444,7 +428,6 @@ class PostDetailResponse(BaseModel):
     created_at: datetime
     poster: PosterInfo
     pictures: List[PostPictureDetail]
-
 
 
 class PostPictureCreate(BaseModel):
@@ -599,7 +582,7 @@ async def get_group_conversation(
 
     except asyncpg.PostgresError as e:
         raise HTTPException(status_code=500, detail=f"Database query failed: {e}")
-    
+
 @app.post("/groups/{group_id}/conversations", response_model=ChatMessage)
 async def send_group_message(
     group_id: uuid.UUID,
@@ -687,7 +670,6 @@ async def get_user_by_sub(
         raise HTTPException(status_code=500, detail=f"Database query failed: {e}")
 
 
-
 @app.post("/friend-requests", status_code=201)
 async def send_friend_request(
     request: FriendRequestCreate,
@@ -729,9 +711,7 @@ async def send_friend_request(
         raise HTTPException(status_code=404, detail="One or both users not found.")
     except asyncpg.PostgresError as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
-    
 
-    
 
 @app.patch("/friend-requests/{requester_id}", status_code=200)
 async def update_friend_request(
@@ -783,11 +763,6 @@ async def update_friend_request(
 
     except asyncpg.PostgresError as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
-    
-
-
-    
-
 
 
 @app.get("/agent/", response_model=str)
@@ -822,27 +797,22 @@ async def get_user_profile(
     first picture of each event.
     """
     try:
-        
+
         user_info_query = "SELECT username, pfp, description FROM users WHERE user_id = $1"
         user_info = await db.fetchrow(user_info_query, user_id)
-        
+
         if not user_info:
             raise HTTPException(status_code=404, detail="User not found.")
 
-        
         friend_count_query = """
             SELECT COUNT(*) FROM friendships
             WHERE (user_one_id = $1 OR user_two_id = $1) AND status = 'accepted';
         """
         friend_count = await db.fetchval(friend_count_query, user_id)
 
-        
         event_count_query = 'SELECT COUNT(*) FROM "eventMembers" WHERE user_id = $1'
         event_count = await db.fetchval(event_count_query, user_id)
 
-        
-        
-        
         latest_events_query = """
             WITH first_pictures AS (
                 -- This CTE finds the "first" picture for each event.
@@ -857,6 +827,7 @@ async def get_user_profile(
                 e.event_id,
                 e.name,
                 e.description,
+                e.location,
                 e."dateTime",
                 fp.picture_url AS first_picture_url -- Get the URL from our CTE
             FROM
@@ -873,19 +844,18 @@ async def get_user_profile(
         """
         latest_event_rows = await db.fetch(latest_events_query, user_id)
 
-        
         latest_events = [
             EventPreview(
-                event_id=row['event_id'],
-                name=row['name'],
-                description=row['description'],
-                dateTime=row['dateTime'],
-                first_picture_url=row['first_picture_url'] 
+                event_id=row["event_id"],
+                name=row["name"],
+                description=row["description"],
+                location=row["location"],
+                dateTime=row["dateTime"],
+                first_picture_url=row["first_picture_url"],
             )
             for row in latest_event_rows
         ]
 
-        
         user_profile = UserProfile(
             user_id=user_id,
             username=user_info['username'],
@@ -900,7 +870,6 @@ async def get_user_profile(
 
     except asyncpg.PostgresError as e:
         raise HTTPException(status_code=500, detail=f"Database query failed: {e}")
-    
 
 
 @app.post("/events/{event_id}/pictures", response_model=EventPictureResponse, status_code=201)
@@ -961,7 +930,7 @@ async def add_picture_to_event(
         raise HTTPException(status_code=404, detail="Event or User not found.")
     except asyncpg.PostgresError as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
-    
+
 @app.get("/events/{event_id}", response_model=EventDetail)
 async def get_event_details(
     event_id: uuid.UUID,
@@ -1018,7 +987,6 @@ async def get_event_details(
 
     except asyncpg.PostgresError as e:
         raise HTTPException(status_code=500, detail=f"Database query failed: {e}")
-    
 
 
 @app.post("/events", response_model=EventCreateResponse, status_code=201)
@@ -1067,9 +1035,6 @@ async def create_event(
         raise HTTPException(status_code=404, detail="Creator user not found.")
     except asyncpg.PostgresError as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
-
-
-
 
 
 @app.post("/users", response_model=UserAuthResponse, status_code=200)
@@ -1187,8 +1152,6 @@ async def edit_user(
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
-
-
 @app.patch("/events/{event_id}", response_model=EventCreateResponse)
 async def edit_event(
     event_id: uuid.UUID,
@@ -1234,7 +1197,6 @@ async def edit_event(
 
     except asyncpg.PostgresError as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
-    
 
 
 @app.post("/groups", response_model=GroupCreateResponse, status_code=201)
@@ -1290,7 +1252,6 @@ async def create_group_with_members(
         raise HTTPException(status_code=404, detail="One or more users to be added were not found.")
     except asyncpg.PostgresError as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
-    
 
 
 @app.post("/groups/{group_id}/members", response_model=AddMembersResponse, status_code=200)
@@ -1348,7 +1309,6 @@ async def add_members_to_group(
         raise HTTPException(status_code=404, detail="Group or one or more users not found.")
     except asyncpg.PostgresError as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
-    
 
 
 @app.post("/posts", response_model=PostResponse, status_code=201)
@@ -1384,8 +1344,6 @@ async def create_post(
         raise HTTPException(status_code=404, detail="Event or User not found.")
     except asyncpg.PostgresError as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
-    
-
 
 
 @app.get("/posts/{post_id}", response_model=PostDetailResponse)
@@ -1432,8 +1390,6 @@ async def get_post_details(
 
     except asyncpg.PostgresError as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
-    
-
 
 
 @app.post("/posts/{post_id}/pictures", response_model=PostPictureResponse, status_code=201)
@@ -1471,7 +1427,6 @@ async def add_picture_to_post(
         raise HTTPException(status_code=404, detail="Post or User not found.")
     except asyncpg.PostgresError as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
-    
 
 
 @app.post("/events/{event_id}/members", response_model=AddEventMembersResponse, status_code=200)
@@ -1520,7 +1475,7 @@ async def add_members_to_event(
         raise HTTPException(status_code=404, detail="Event or one or more users not found.")
     except asyncpg.PostgresError as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
-    
+
 # Add this new endpoint to your main.py file
 
 # In main.py, replace your existing tap_user_at_event function with this one
