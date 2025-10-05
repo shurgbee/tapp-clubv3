@@ -29,6 +29,9 @@ importers:
       expo-linear-gradient:
         specifier: ^15.0.7
         version: 15.0.7(expo@54.0.12)(react-native@0.81.4(@babel/core@7.28.4)(react@19.1.0)(types-react@19.0.0-rc.1))(react@19.1.0)
+      expo-location:
+        specifier: ^19.0.7
+        version: 19.0.7(expo@54.0.12)
       expo-router:
         specifier: ~6.0.0
         version: 6.0.10(f0323e1a27e15aabb32b343281024bab)
@@ -2080,6 +2083,11 @@ packages:
       react: '*'
       react-native: '*'
 
+  expo-location@19.0.7:
+    resolution: {integrity: sha512-YNkh4r9E6ECbPkBCAMG5A5yHDgS0pw+Rzyd0l2ZQlCtjkhlODB55nMCKr5CZnUI0mXTkaSm8CwfoCO8n2MpYfg==}
+    peerDependencies:
+      expo: '*'
+
   expo-modules-autolinking@3.0.14:
     resolution: {integrity: sha512-/qh1ru2kGPOycGvE9dXEKJZbPmYA5U5UcAlWWFbcq9+VhhWdZWZ0zs7V2JCdl+OvpBDo1y9WbqPP5VHQSYqT+Q==}
     hasBin: true
@@ -2235,6 +2243,7 @@ packages:
   get-proto@1.0.1:
     resolution: {integrity: sha512-sTSfBjoXBp89JvIKIefqw7U2CCebsc74kiY6awiGogKtoSGbgjYE/G/+l9sF3MWFPNc9IcoOC4ODfKHfxFmp0g==}
     engines: {node: '>= 0.4'}
+
   get-stream@6.0.1:
     resolution: {integrity: sha512-ts6Wi+2j3jQjqi70w5AlN8DFnkSwC+MqmxEzdEALB2qXZYV3X/b1CTfgPLGJNMeAWxdPfU8FO1ms3NUfaHCPYg==}
     engines: {node: '>=10'}
@@ -6462,6 +6471,10 @@ snapshots:
       - expo
       - supports-color
 
+  expo-location@19.0.7(expo@54.0.12):
+    dependencies:
+      expo: 54.0.12(@babel/core@7.28.4)(@expo/metro-runtime@6.1.2)(expo-router@6.0.10)(react-native@0.81.4(@babel/core@7.28.4)(react@19.1.0)(types-react@19.0.0-rc.1))(react@19.1.0)
+
   expo-modules-autolinking@3.0.14:
     dependencies:
       '@expo/spawn-async': 1.7.2
@@ -6655,6 +6668,7 @@ snapshots:
     dependencies:
       dunder-proto: 1.0.1
       es-object-atoms: 1.1.1
+
   get-stream@6.0.1: {}
 
   getenv@2.0.0: {}

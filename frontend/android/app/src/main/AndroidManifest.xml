@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+  <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
   <uses-permission android:name="android.permission.BIND_NFC_SERVICE"/>
   <uses-permission android:name="android.permission.INTERNET"/>
   <uses-permission android:name="android.permission.NFC"/>
@@ -43,6 +45,11 @@
         <action android:name="android.intent.action.VIEW"/>
         <category android:name="android.intent.category.DEFAULT"/>
         <category android:name="android.intent.category.BROWSABLE"/>
+        <data android:scheme="com.tappclub.app.auth0" android:pathPrefix="/android/com.tappclub.app/callback" android:host="dev-y82fiz0xbrxbwxfc.us.auth0.com"/>
+        <data android:scheme="com.tappclub.app.auth0" android:pathPrefix="/android/com.tappclub.app/callback" android:host="dev-y82fiz0xbrxbwxfc.us.auth0.com"/>
+        <data android:scheme="com.tappclub.app.auth0" android:pathPrefix="/android/com.tappclub.app/callback" android:host="dev-y82fiz0xbrxbwxfc.us.auth0.com"/>
+        <data android:scheme="com.tappclub.app.auth0" android:pathPrefix="/android/com.tappclub.app/callback" android:host="dev-y82fiz0xbrxbwxfc.us.auth0.com"/>
+        <data android:scheme="com.tappclub.app.auth0" android:pathPrefix="/android/com.tappclub.app/callback" android:host="dev-y82fiz0xbrxbwxfc.us.auth0.com"/>
         <data android:scheme="com.tappclub.app.auth0" android:pathPrefix="/android/com.tappclub.app/callback" android:host="dev-y82fiz0xbrxbwxfc.us.auth0.com"/>
         <data android:scheme="com.tappclub.app.auth0" android:pathPrefix="/android/com.tappclub.app/callback" android:host="dev-y82fiz0xbrxbwxfc.us.auth0.com"/>
         <data android:scheme="com.tappclub.app.auth0" android:pathPrefix="/android/com.tappclub.app/callback" android:host="dev-y82fiz0xbrxbwxfc.us.auth0.com"/>
