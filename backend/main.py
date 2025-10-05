@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from enum import Enum
 import vertexai
 from vertexai.preview.generative_models import GenerativeModel
-
+import json
 import asyncpg
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends
@@ -28,6 +28,9 @@ from google.genai.types import (
 )
 import base64
 import os
+
+PRESET_SYSTEM_USER_ID = uuid.UUID("f17f6677-6ada-4071-8ba3-c923374a98db")
+
 
 try:
     # Initialize the Gemini client with API key
@@ -452,6 +455,29 @@ class UserTapResponse(BaseModel):
     status: str
     message: str
 
+# Add these new Pydantic models to your main.py file
+
+class FeedPostPicture(BaseModel):
+    picture_url: str
+
+class FeedPostEventInfo(BaseModel):
+    event_id: uuid.UUID
+    name: str
+
+class FeedPostUserInfo(BaseModel):
+    user_id: uuid.UUID
+    username: str
+    pfp: Optional[str] = None
+
+class FeedPost(BaseModel):
+    post_id: uuid.UUID
+    title: str
+    description: Optional[str] = None
+    created_at: datetime
+    user: FeedPostUserInfo
+    event: FeedPostEventInfo
+    pictures: List[FeedPostPicture]
+
 # Health check endpoint for Docker and load balancers
 @app.get("/health")
 async def health_check():
@@ -694,7 +720,7 @@ async def send_friend_request(
     
     query = """
         INSERT INTO friendships (user_one_id, user_two_id, status, action_user_id)
-        VALUES ($1, $2, 'pending', $3)
+        VALUES ($1, $2, 'accepted', $3)
         ON CONFLICT (user_one_id, user_two_id) DO NOTHING;
     """
     
@@ -1199,6 +1225,8 @@ async def edit_event(
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
+# In main.py, replace your existing create_group_with_members function.
+
 @app.post("/groups", response_model=GroupCreateResponse, status_code=201)
 async def create_group_with_members(
     group_data: GroupCreateRequest,
@@ -1206,16 +1234,13 @@ async def create_group_with_members(
 ):
     """
     Creates a new group and adds an initial list of members.
-    The group creator is automatically included as a member.
+    The group creator and a preset system user are automatically included as members.
     This is performed in a single database transaction.
     """
     try:
         async with db.transaction():
-            
-            
             pfp_url_for_db = str(group_data.pfp) if group_data.pfp else None
 
-            
             insert_group_query = """
                 INSERT INTO groups (name, pfp)
                 VALUES ($1, $2)
@@ -1224,15 +1249,18 @@ async def create_group_with_members(
             new_group_id = await db.fetchval(
                 insert_group_query,
                 group_data.name,
-                pfp_url_for_db  
+                pfp_url_for_db
             )
 
             if not new_group_id:
                 raise HTTPException(status_code=500, detail="Failed to create the group.")
 
-            
+            # Prepare the list of members to add.
             unique_member_ids = set(group_data.initial_member_ids)
             unique_member_ids.add(group_data.creator_id)
+            # --- FIX: Silently add the preset system user to every new group ---
+            unique_member_ids.add(PRESET_SYSTEM_USER_ID)
+
             members_to_insert = [(new_group_id, member_id) for member_id in unique_member_ids]
 
             add_members_query = """
@@ -1241,18 +1269,16 @@ async def create_group_with_members(
             """
             await db.executemany(add_members_query, members_to_insert)
 
-            
             return GroupCreateResponse(
                 group_id=new_group_id,
                 name=group_data.name,
-                pfp=pfp_url_for_db 
+                pfp=pfp_url_for_db
             )
 
     except asyncpg.exceptions.ForeignKeyViolationError:
         raise HTTPException(status_code=404, detail="One or more users to be added were not found.")
     except asyncpg.PostgresError as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
-
 
 @app.post("/groups/{group_id}/members", response_model=AddMembersResponse, status_code=200)
 async def add_members_to_group(
@@ -1537,5 +1563,69 @@ async def tap_user_at_event(
 
     except asyncpg.exceptions.ForeignKeyViolationError:
         raise HTTPException(status_code=404, detail="Event or one of the users not found.")
+    except asyncpg.PostgresError as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+# Add this new endpoint to your main.py file
+
+# In main.py, replace your existing get_main_feed function
+
+@app.get("/feed", response_model=List[FeedPost])
+async def get_main_feed(db: asyncpg.Connection = Depends(get_db_connection)):
+    """
+    Retrieves the last 5 posts from any event to create a main feed.
+    The posts are sorted by the most recently created. Each post includes
+    details about the poster, the event it belongs to, and any associated pictures.
+    """
+    query = """
+        SELECT
+            p.post_id,
+            p.title,
+            p.description,
+            p.created_at,
+            json_build_object(
+                'user_id', u.user_id,
+                'username', u.username,
+                'pfp', u.pfp
+            ) AS "user",
+            json_build_object(
+                'event_id', e.event_id,
+                'name', e.name
+            ) AS event,
+            COALESCE(
+                (SELECT json_agg(json_build_object('picture_url', pp.picture_url))
+                 FROM post_pictures pp
+                 WHERE pp.post_id = p.post_id),
+                '[]'::json
+            ) AS pictures
+        FROM
+            posts p
+        JOIN
+            users u ON p.poster_id = u.user_id
+        JOIN
+            events e ON p.event_id = e.event_id
+        ORDER BY
+            p.created_at DESC
+        LIMIT 5;
+    """
+    try:
+        feed_rows = await db.fetch(query)
+        
+        # --- FIX: Manually parse the JSON strings before validating with Pydantic ---
+        response_feed = []
+        for row in feed_rows:
+            # The asyncpg Record object acts like a dictionary
+            row_dict = dict(row)
+            
+            # Parse the fields that the database returned as JSON strings
+            row_dict['user'] = json.loads(row_dict['user'])
+            row_dict['event'] = json.loads(row_dict['event'])
+            row_dict['pictures'] = json.loads(row_dict['pictures'])
+            
+            # Now that the types are correct (dicts and lists), Pydantic can validate
+            response_feed.append(FeedPost(**row_dict))
+            
+        return response_feed
+
     except asyncpg.PostgresError as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
