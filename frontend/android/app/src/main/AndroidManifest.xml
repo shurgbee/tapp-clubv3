@@ -46,12 +46,6 @@
         <category android:name="android.intent.category.DEFAULT"/>
         <category android:name="android.intent.category.BROWSABLE"/>
         <data android:scheme="com.tappclub.app.auth0" android:pathPrefix="/android/com.tappclub.app/callback" android:host="dev-y82fiz0xbrxbwxfc.us.auth0.com"/>
-        <data android:scheme="com.tappclub.app.auth0" android:pathPrefix="/android/com.tappclub.app/callback" android:host="dev-y82fiz0xbrxbwxfc.us.auth0.com"/>
-        <data android:scheme="com.tappclub.app.auth0" android:pathPrefix="/android/com.tappclub.app/callback" android:host="dev-y82fiz0xbrxbwxfc.us.auth0.com"/>
-        <data android:scheme="com.tappclub.app.auth0" android:pathPrefix="/android/com.tappclub.app/callback" android:host="dev-y82fiz0xbrxbwxfc.us.auth0.com"/>
-        <data android:scheme="com.tappclub.app.auth0" android:pathPrefix="/android/com.tappclub.app/callback" android:host="dev-y82fiz0xbrxbwxfc.us.auth0.com"/>
-        <data android:scheme="com.tappclub.app.auth0" android:pathPrefix="/android/com.tappclub.app/callback" android:host="dev-y82fiz0xbrxbwxfc.us.auth0.com"/>
-        <data android:scheme="com.tappclub.app.auth0" android:pathPrefix="/android/com.tappclub.app/callback" android:host="dev-y82fiz0xbrxbwxfc.us.auth0.com"/>
       </intent-filter>
     </activity>
   </application>

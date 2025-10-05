@@ -16,6 +16,7 @@ import { useLocalSearchParams, Stack } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import dayjs from "dayjs";
 import { SafeAreaView } from "react-native-safe-area-context";
+import Markdown from "react-native-markdown-display";
 import { useAuth } from "../../contexts/AuthContext";
 import {
   getGroupMessages,
@@ -248,14 +249,61 @@ export default function ChatDetailScreen() {
                 {!item.isMe && (
                   <Text style={styles.messageSender}>{item.poster_name}</Text>
                 )}
-                <Text
-                  style={[
-                    styles.messageText,
-                    item.isMe && styles.myMessageText,
-                  ]}
+                <Markdown
+                  style={{
+                    body: {
+                      color: item.isMe ? "#fff" : "#111827",
+                      fontSize: 15,
+                      lineHeight: 20,
+                    },
+                    paragraph: {
+                      marginTop: 0,
+                      marginBottom: 4,
+                    },
+                    strong: {
+                      fontWeight: "700",
+                    },
+                    em: {
+                      fontStyle: "italic",
+                    },
+                    bullet_list: {
+                      marginTop: 4,
+                      marginBottom: 4,
+                    },
+                    ordered_list: {
+                      marginTop: 4,
+                      marginBottom: 4,
+                    },
+                    list_item: {
+                      marginTop: 2,
+                      marginBottom: 2,
+                    },
+                    code_inline: {
+                      backgroundColor: item.isMe ? "#5558e8" : "#f3f4f6",
+                      color: item.isMe ? "#e0e7ff" : "#111827",
+                      paddingHorizontal: 4,
+                      paddingVertical: 2,
+                      borderRadius: 4,
+                      fontFamily: "monospace",
+                    },
+                    code_block: {
+                      backgroundColor: item.isMe ? "#5558e8" : "#f3f4f6",
+                      color: item.isMe ? "#e0e7ff" : "#111827",
+                      padding: 8,
+                      borderRadius: 4,
+                      fontFamily: "monospace",
+                    },
+                    fence: {
+                      backgroundColor: item.isMe ? "#5558e8" : "#f3f4f6",
+                      color: item.isMe ? "#e0e7ff" : "#111827",
+                      padding: 8,
+                      borderRadius: 4,
+                      fontFamily: "monospace",
+                    },
+                  }}
                 >
                   {item.messageContent}
-                </Text>
+                </Markdown>
                 <Text
                   style={[
                     styles.messageTime,
