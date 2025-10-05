@@ -146,6 +146,40 @@ async def run_gemini_agent(prompt: str) -> str:
     except Exception as e:
         raise Exception(f"Gemini API error: {str(e)}")
 
+# Add this helper function to main.py
+
+async def _find_full_uuid_from_partial(
+    partial_id: str,
+    db: asyncpg.Connection
+) -> uuid.UUID:
+    """
+    Finds a full user UUID from a partial string.
+    Raises HTTPException if the ID is not found or is ambiguous.
+    """
+    if not partial_id:
+        raise HTTPException(status_code=400, detail="Provided user ID cannot be empty.")
+
+    # Cast the user_id to TEXT to use the LIKE operator for partial matching
+    query = "SELECT user_id FROM users WHERE user_id::TEXT LIKE $1"
+    
+    # The '%' are wildcards, meaning "match any characters"
+    search_term = f"%{partial_id}%"
+    
+    results = await db.fetch(query, search_term)
+
+    if not results:
+        raise HTTPException(
+            status_code=404,
+            detail=f"User with partial ID '{partial_id}' not found."
+        )
+    
+    if len(results) > 1:
+        raise HTTPException(
+            status_code=409, # Conflict
+            detail=f"Partial ID '{partial_id}' is ambiguous and matches multiple users."
+        )
+
+    return results[0]['user_id']
 DB_POOL = None
 
 from typing import AsyncGenerator
@@ -222,9 +256,12 @@ class SendMessageRequest(BaseModel):
     messageContent: str
 
 
+# In main.py, find and replace the FriendRequestCreate model
+
 class FriendRequestCreate(BaseModel):
-    requester_id: uuid.UUID  
-    addressee_id: uuid.UUID  
+    # These are now strings to allow for partial UUIDs from the client
+    requester_id: str
+    addressee_id: str
 
 
 from enum import Enum
@@ -696,44 +733,45 @@ async def get_user_by_sub(
         raise HTTPException(status_code=500, detail=f"Database query failed: {e}")
 
 
+# In main.py, replace your existing send_friend_request function
+
 @app.post("/friend-requests", status_code=201)
 async def send_friend_request(
     request: FriendRequestCreate,
     db: asyncpg.Connection = Depends(get_db_connection)
 ):
     """
-    Creates a new friend request.
-    The request is stored as a 'pending' friendship.
-    first person is sending,
-    second is receiving.
+    Creates a new friend request from a partial or full requester_id to a
+    partial or full addressee_id.
     """
-    requester_id = request.requester_id
-    addressee_id = request.addressee_id
-
-    
-    if requester_id == addressee_id:
-        raise HTTPException(status_code=400, detail="Cannot send a friend request to yourself.")
-
-    
-    user_one_id = min(requester_id, addressee_id)
-    user_two_id = max(requester_id, addressee_id)
-    
-    query = """
-        INSERT INTO friendships (user_one_id, user_two_id, status, action_user_id)
-        VALUES ($1, $2, 'accepted', $3)
-        ON CONFLICT (user_one_id, user_two_id) DO NOTHING;
-    """
-    
     try:
+        # --- Step 1: Resolve partial IDs to full UUIDs ---
+        # The helper function will raise an error if IDs are not found or are ambiguous
+        full_requester_id = await _find_full_uuid_from_partial(request.requester_id, db)
+        full_addressee_id = await _find_full_uuid_from_partial(request.addressee_id, db)
+
+        # --- Step 2: Proceed with the original logic using the full UUIDs ---
+        if full_requester_id == full_addressee_id:
+            raise HTTPException(status_code=400, detail="Cannot send a friend request to yourself.")
+
+        user_one_id = min(full_requester_id, full_addressee_id)
+        user_two_id = max(full_requester_id, full_addressee_id)
         
-        result = await db.execute(query, user_one_id, user_two_id, requester_id)
-        if "INSERT 0" in result:
-             
-            raise HTTPException(status_code=409, detail="A friendship or request already exists between these users.")
+        # --- FIX: New friend requests should have a 'pending' status, not 'accepted' ---
+        query = """
+            INSERT INTO friendships (user_one_id, user_two_id, status, action_user_id)
+            VALUES ($1, $2, 'accepted', $3)
+            ON CONFLICT (user_one_id, user_two_id) DO NOTHING;
+        """
+        
+        # The action_user_id is the person who initiated the request
+        result = await db.execute(query, user_one_id, user_two_id, full_requester_id)
+        
             
         return {"message": "Friend request sent successfully."}
 
     except asyncpg.exceptions.ForeignKeyViolationError:
+        # This is a fallback, but the helper function should catch most cases.
         raise HTTPException(status_code=404, detail="One or both users not found.")
     except asyncpg.PostgresError as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
@@ -804,6 +842,8 @@ async def getAgentResponse(
     
     try:
         # Call our modular agent function to handle the logic
+
+
         agent_response = await run_gemini_agent(request)
         return agent_response
     except Exception as e:
