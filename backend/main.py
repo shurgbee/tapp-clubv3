@@ -116,35 +116,59 @@ def get_directions(origin: str, destination: str) -> str:
 # --- 3. CREATE THE MODULAR AGENT FUNCTION ---
 # This is the core logic, encapsulated into a single, reusable function.
 
-async def run_gemini_agent(prompt: str) -> str:
+async def run_gemini_agent(prompt: str, group_id: uuid.UUID, db: asyncpg.Connection) -> str:
     """
-    Runs the full agentic process with Gemini.
-
-    Args:
-        prompt: The user's input query.
-
-    Returns:
-        The final textual response from the agent.
+    Runs the agentic process by constructing a single large prompt string
+    that includes persona, history, and the new user query.
     """
     try:
-        # First, call Gemini with just Google Search grounding to get a smart response
-        # that can access real-time information
+        # --- Step 1: Fetch and format the conversation history ---
+        history_query = """
+            SELECT u.username, c."messageContent"
+            FROM conversations c
+            JOIN users u ON c.user_id = u.user_id
+            WHERE c.group_id = $1
+            ORDER BY c."dateTime" DESC
+            LIMIT 20;
+        """
+        message_records = await db.fetch(history_query, group_id)
+        message_records.reverse() # Put messages in chronological order
+
+        # Format the history into a simple string format
+        formatted_history = "\n".join(
+            [f"{record['username']}: {record['messageContent']}" for record in message_records]
+        )
+
+        # --- Step 2: Construct the single, combined prompt ---
+        # This combines the persona, the context of the conversation, and the new query.
+        combined_prompt = f"""
+        You are a helpful and friendly assistant for planning and organizing events. Your goal is to help the users in this group chat. In the message you are {PRESET_SYSTEM_USER_ID}. This is not your real name, but instead your ID in the chat. Do not refer to yourself by this ID, only call yourself Larry. Be proactive and suggest ideas.
+
+        Here is the recent conversation history:
+        ---
+        {formatted_history}
+        ---
+
+        Now, please respond to the following new message from the user:
+        User: {prompt}
+        Larry:
+        """
+
+        # --- Step 3: Call the Gemini API with the combined prompt ---
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt,
+            model='gemini-2.5-flash', # Using a current model name
+            contents=combined_prompt, # Pass the entire context as a single string
             config=GenerateContentConfig(
-                #No maps stuff for now
                 tools=[Tool(google_search=GoogleSearch())],
                 temperature=0.7,
             )
         )
         
-        # The response will include search-grounded results
-        # which can answer most queries about places, directions, and general info
         return response.text
         
     except Exception as e:
         raise Exception(f"Gemini API error: {str(e)}")
+
 
 # Add this helper function to main.py
 
@@ -342,6 +366,14 @@ class EventAttendee(BaseModel):
     username: str
     pfp: Optional[str]
 
+
+# Add this new Pydantic model to your main.py file
+
+class AgentRequest(BaseModel):
+    prompt: str
+
+class AgentResponse(BaseModel):
+    response: str
 class EventPictureDetail(BaseModel):
     picture_id: uuid.UUID
     picture_url: str
@@ -828,28 +860,43 @@ async def update_friend_request(
     except asyncpg.PostgresError as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
-
-@app.get("/agent/", response_model=str)
-async def getAgentResponse(
-    request: str
+@app.post("/agent/{group_id}", response_model=AgentResponse)
+async def get_agent_response_for_group(
+    group_id: uuid.UUID,
+    request: AgentRequest,
+    db: asyncpg.Connection = Depends(get_db_connection)
 ):
     """
-    Endpoint to interact with the Gemini agent.
-    It takes a user prompt, gets the agent's response, and returns it.
+    Endpoint to interact with the agent ("Larry") within a group chat.
+    It gets the agent's response and saves it to the conversation history.
     """
-    if not request:
+    if not request.prompt:
         raise HTTPException(status_code=400, detail="Prompt cannot be empty")
     
     try:
-        # Call our modular agent function to handle the logic
+        # --- Step 1: Get the agent's response ---
+        agent_text_response = await run_gemini_agent(request.prompt, group_id, db)
+        
+        # --- Step 2: Save the agent's response to the conversation table ---
+        save_response_query = """
+            INSERT INTO conversations (group_id, user_id, "messageType", "messageContent", "dateTime")
+            VALUES ($1, $2, 'text', $3, $4);
+        """
+        await db.execute(
+            save_response_query,
+            group_id,
+            PRESET_SYSTEM_USER_ID, # The ID of our bot user, "Larry"
+            agent_text_response,
+            datetime.now(timezone.utc)
+        )
 
+        # --- Step 3: Return the response to the client ---
+        return AgentResponse(response=agent_text_response)
 
-        agent_response = await run_gemini_agent(request)
-        return agent_response
+    except asyncpg.exceptions.ForeignKeyViolationError:
+        raise HTTPException(status_code=404, detail="Group or User not found.")
     except Exception as e:
-        # Handle potential errors gracefully
         raise HTTPException(status_code=500, detail=f"An internal error occurred: {str(e)}")
-    return None
 
 
 @app.get("/users/{user_id}/profile", response_model=UserProfile)
