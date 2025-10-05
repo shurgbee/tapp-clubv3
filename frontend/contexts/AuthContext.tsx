@@ -48,14 +48,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsFetchingUuid(true);
 
         try {
-          const encodedSub = encodeURIComponent(auth0.user.sub);
           const response = await fetch(
-            `${process.env.EXPO_PUBLIC_API_URL}/users/by-sub/${encodedSub}`
+            `${process.env.EXPO_PUBLIC_API_URL}/users`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                auth0_sub: auth0.user.sub,
+              }),
+            }
           );
 
           if (response.ok) {
-            const data = await response.json();
+            const data = await response.json() as { user_id: string };
             console.log("[DEBUG AUTH] ✅ Fetched user_id:", data.user_id);
+            console.log("[DEBUG AUTH] Response data:", data);
             setUuid(data.user_id);
           } else {
             console.log(

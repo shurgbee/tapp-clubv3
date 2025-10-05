@@ -1,4 +1,5 @@
 import { Link, Stack } from "expo-router";
+import React, { useEffect, useState } from "react";
 import {
   FlatList,
   View,
@@ -6,76 +7,54 @@ import {
   Pressable,
   StyleSheet,
   Image,
+  ActivityIndicator,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import dayjs from "dayjs";
-import type { FeedItem } from "../../types";
 import { useAuth } from "../../contexts/AuthContext";
 
-// Mock data for demonstration
-const mockFeedData: FeedItem[] = [
-  {
-    event: {
-      event_id: "1",
-      name: "Trip to Japan",
-      description:
-        "Amazing trip to Tokyo and Kyoto. Visited temples, tried authentic ramen, and experienced cherry blossoms!",
-      dateTime: "2024-03-15T14:30:00Z",
-      coverUrl:
-        "https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?w=800",
-    },
-    poster: {
-      user_id: "user1",
-      name: "Joshua Lee",
-      pfp: "https://i.pravatar.cc/150?img=12",
-      slug: "joshua_l",
-    },
-    post: {
-      user_id: "user1",
-      event_id: "1",
-      messages: "Best trip ever! Can't wait to go back 🇯🇵",
-      imageUrl:
-        "https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?w=800",
-    },
-  },
-  {
-    event: {
-      event_id: "2",
-      name: "Beach Party",
-      description: "Summer vibes with friends at Santa Monica Beach",
-      dateTime: "2024-03-10T18:00:00Z",
-      coverUrl:
-        "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800",
-    },
-    poster: {
-      user_id: "user2",
-      name: "Sarah Chen",
-      pfp: "https://i.pravatar.cc/150?img=5",
-      slug: "sarah_c",
-    },
-  },
-  {
-    event: {
-      event_id: "3",
-      name: "Tech Conference 2024",
-      description:
-        "Amazing talks on AI and web development. Met so many cool people!",
-      dateTime: "2024-03-08T09:00:00Z",
-      coverUrl:
-        "https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800",
-    },
-    poster: {
-      user_id: "user3",
-      name: "Alex Martinez",
-      pfp: "https://i.pravatar.cc/150?img=8",
-      slug: "alex_m",
-    },
-  },
-];
-
+type FeedApiItem = {
+  post_id: string;
+  title: string;
+  description: string;
+  created_at: string; // ISO
+  user: {
+    user_id: string;
+    username: string;
+    pfp: string;
+  };
+  event: {
+    event_id: string;
+    name: string;
+  };
+  pictures: Array<{ picture_url: string }>;
+};
 
 export default function HomeScreen() {
   const { user, uuid } = useAuth();
+  const [feed, setFeed] = useState<FeedApiItem[] | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchFeed = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const resp = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/feed`);
+        if (!resp.ok) {
+          throw new Error(`Failed to load feed (${resp.status})`);
+        }
+        const data = (await resp.json()) as FeedApiItem[];
+        setFeed(data);
+      } catch (e: any) {
+        setError(e?.message ?? "Failed to load feed");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchFeed();
+  }, []);
   return (
     <>
       <Stack.Screen
@@ -92,37 +71,36 @@ export default function HomeScreen() {
       />
       <FlatList
         style={styles.container}
-        data={mockFeedData}
-        keyExtractor={(item) => String(item.event.event_id)}
+        data={feed ?? []}
+        keyExtractor={(item) => String(item.post_id)}
         renderItem={({ item }) => (
           <View style={styles.card}>
             {/* Header with poster info */}
             <View style={styles.cardHeader}>
               <Image
-                source={{ uri: item.poster.pfp ?? "" }}
+                source={{ uri: item.user.pfp ?? "" }}
                 style={styles.avatar}
               />
-              <Link
-                href={`/profile/${item.poster.slug ?? "unknown"}` as any}
-                asChild
-              >
+              <Link href={`/profile/${item.user.user_id}` as any} asChild>
                 <Pressable>
-                  <Text style={styles.posterName}>{item.poster.name}</Text>
+                  <Text style={styles.posterName}>{item.user.username}</Text>
                 </Pressable>
               </Link>
             </View>
 
             {/* Event cover image */}
-            {item.event.coverUrl && (
+            {item.pictures && item.pictures[0]?.picture_url && (
               <Image
-                source={{ uri: item.event.coverUrl }}
+                source={{ uri: item.pictures[0].picture_url }}
                 style={styles.coverImage}
               />
             )}
 
             {/* Event details */}
             <View style={styles.cardContent}>
-              <Text style={styles.eventName}>{item.event.name}</Text>
+              <Text style={styles.eventName}>
+                {item.title || item.event.name}
+              </Text>
               <View style={styles.metaRow}>
                 <MaterialCommunityIcons
                   name="calendar"
@@ -130,7 +108,7 @@ export default function HomeScreen() {
                   color="#6b7280"
                 />
                 <Text style={styles.metaText}>
-                  {dayjs(item.event.dateTime).format("M/D/YYYY")}
+                  {dayjs(item.created_at).format("M/D/YYYY")}
                 </Text>
                 <MaterialCommunityIcons
                   name="clock-outline"
@@ -138,12 +116,12 @@ export default function HomeScreen() {
                   color="#6b7280"
                 />
                 <Text style={styles.metaText}>
-                  {dayjs(item.event.dateTime).format("h:mm A")}
+                  {dayjs(item.created_at).format("h:mm A")}
                 </Text>
               </View>
-              {item.event.description && (
+              {item.description && (
                 <Text style={styles.description} numberOfLines={3}>
-                  About: {item.event.description}
+                  {item.description}
                 </Text>
               )}
             </View>
@@ -176,17 +154,25 @@ export default function HomeScreen() {
         )}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <MaterialCommunityIcons
-              name="calendar-blank"
-              size={64}
-              color="#d1d5db"
-            />
-            <Text style={styles.emptyText}>
-              No recent events from friends yet.
-            </Text>
-            <Text style={styles.emptySubtext}>
-              Tap + to post your first event!
-            </Text>
+            {isLoading ? (
+              <ActivityIndicator size="large" color="#6366f1" />
+            ) : (
+              <>
+                <MaterialCommunityIcons
+                  name="calendar-blank"
+                  size={64}
+                  color="#d1d5db"
+                />
+                <Text style={styles.emptyText}>
+                  {error ? error : "No recent posts yet."}
+                </Text>
+                {!error && (
+                  <Text style={styles.emptySubtext}>
+                    Tap + to post your first event!
+                  </Text>
+                )}
+              </>
+            )}
           </View>
         }
       />
