@@ -1,4 +1,4 @@
-# main.py
+
 import os
 import uuid
 from datetime import datetime, timezone
@@ -8,23 +8,23 @@ from contextlib import asynccontextmanager
 from enum import Enum
 import vertexai
 from vertexai.preview.generative_models import GenerativeModel
-# --- Library Imports ---
+
 import asyncpg
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel, HttpUrl, Field
 
 
-# --- Configuration ---
+
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
-GOOGLE_PROJECT_ID = "neural-tome-474200-v9" # Your Google Cloud Project ID
-GOOGLE_LOCATION = "us-central1"     # Your Vertex AI Location
+GOOGLE_PROJECT_ID = "neural-tome-474200-v9" 
+GOOGLE_LOCATION = "us-central1"     
 
-# --- Global DB Pool ---
+
 DB_POOL = None
 
-# --- Lifespan Manager for Startup/Shutdown ---
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Handles application startup and shutdown events."""
@@ -34,20 +34,20 @@ async def lifespan(app: FastAPI):
         DB_POOL = await asyncpg.create_pool(dsn=DATABASE_URL, min_size=1, max_size=10)
         print("Database connection pool created successfully.")
         
-        yield # Application is now running
+        yield 
     finally:
         if DB_POOL:
             print("Application shutdown: Closing database connection pool.")
             await DB_POOL.close()
 
-# --- FastAPI App Initialization ---
+
 app = FastAPI(
     title="TAPP Club API",
     description="API for a social event and group chat application.",
     lifespan=lifespan
 )
 
-# --- Database Dependency ---
+
 async def get_db_connection() -> asyncpg.Connection:
     """Dependency to get a connection from the pool for an endpoint."""
     if not DB_POOL:
@@ -56,10 +56,10 @@ async def get_db_connection() -> asyncpg.Connection:
         yield connection
 
 
-# ==================================================================
-# --- FIX 1: RE-ADDED THE MISSING get_db_connection FUNCTION ---
-# This function must be defined before the API endpoints that use it.
-# ==================================================================
+
+
+
+
 async def get_db_connection() -> asyncpg.Connection:
     """Dependency to get a connection from the pool."""
     if not DB_POOL:
@@ -69,11 +69,11 @@ async def get_db_connection() -> asyncpg.Connection:
         yield connection
 
 
-# --- Pydantic Models for Response Data ---
-# ==================================================================
-# --- FIX 2: RENAMED 'orm_mode' to 'from_attributes' ---
-# This resolves the UserWarning from Pydantic V2.
-# ==================================================================
+
+
+
+
+
 class ChatMessage(BaseModel):
     poster_id: uuid.UUID
     poster_name: str
@@ -82,7 +82,7 @@ class ChatMessage(BaseModel):
     dateTime: datetime
 
     class Config:
-        from_attributes = True # <-- UPDATED
+        from_attributes = True 
 
 class GroupChat(BaseModel):
     group_id: uuid.UUID
@@ -90,7 +90,7 @@ class GroupChat(BaseModel):
     messages: List[ChatMessage]
 
     class Config:
-        from_attributes = True # <-- UPDATED
+        from_attributes = True 
 
 class GroupPreview(BaseModel):
     group_id: uuid.UUID
@@ -101,19 +101,19 @@ class GroupPreview(BaseModel):
     last_message_poster_name: Optional[str]
 
     class Config:
-        from_attributes = True # <-- UPDATED
+        from_attributes = True 
 
 class SendMessageRequest(BaseModel):
     user_id: uuid.UUID
     messageType: str
     messageContent: str
-# Add this to your main.py with the other models
+
 
 class FriendRequestCreate(BaseModel):
-    requester_id: uuid.UUID  # The user sending the request
-    addressee_id: uuid.UUID  # The user receiving the request
+    requester_id: uuid.UUID  
+    addressee_id: uuid.UUID  
 
-    # Add this with your other models
+    
 from enum import Enum
 
 class FriendRequestAction(str, Enum):
@@ -121,13 +121,13 @@ class FriendRequestAction(str, Enum):
     DECLINE = "declined"
 
 class FriendRequestUpdate(BaseModel):
-    # The user who is accepting or declining the request.
+    
     responder_id: uuid.UUID
-    # The action they are taking.
+    
     action: FriendRequestAction
 
 
-# Add these new models to main.py
+
 
 class EventPreview(BaseModel):
     event_id: uuid.UUID
@@ -153,7 +153,7 @@ class UserProfile(BaseModel):
 
 class EventPictureCreate(BaseModel):
     uploader_id: uuid.UUID
-    picture_url: HttpUrl  # Pydantic will validate this is a proper URL
+    picture_url: HttpUrl  
 
 class EventPictureResponse(BaseModel):
     picture_id: uuid.UUID
@@ -167,7 +167,7 @@ class EventPictureResponse(BaseModel):
 
 
 
-# Add these new models to your main.py file
+
 
 class EventAttendee(BaseModel):
     user_id: uuid.UUID
@@ -210,10 +210,10 @@ class UserAuthRequest(BaseModel):
 class UserAuthResponse(BaseModel):
     user_id: uuid.UUID
 
-# Add these new Pydantic models to your main.py file
+
 
 class UserUpdateRequest(BaseModel):
-    # All fields are optional. The user can send one, some, or all of them.
+    
     username: Optional[str] = None
     location: Optional[str] = None
     calendar_json_id: Optional[uuid.UUID] = None
@@ -221,7 +221,7 @@ class UserUpdateRequest(BaseModel):
     description: Optional[str] = None
 
 class UserUpdateResponse(BaseModel):
-    # This model represents the full user object returned after a successful update.
+    
     user_id: uuid.UUID
     username: str
     location: Optional[str]
@@ -236,8 +236,8 @@ class EventUpdateRequest(BaseModel):
     dateTime: Optional[datetime] = None
     location: Optional[str] = None 
 
-# --- API Endpoints ---
-# In your main.py file, replace the get_user_groups function with this one:
+
+
 
 @app.get("/users/{user_id}/groups", response_model=List[GroupPreview])
 async def get_user_groups(
@@ -283,14 +283,14 @@ async def get_user_groups(
     try:
         rows = await db.fetch(query, user_id)
         
-        # ==================================================================
-        # --- FIX: Manually construct the Pydantic models from the rows ---
-        # This resolves the Pydantic validation error.
-        # ==================================================================
+        
+        
+        
+        
         response = []
         for row in rows:
-            # The asyncpg 'row' object acts like a dictionary.
-            # We map the keys from the row to the Pydantic model's fields.
+            
+            
             group_preview = GroupPreview(
                 group_id=row['group_id'],
                 group_name=row['group_name'],
@@ -359,8 +359,8 @@ async def send_group_message(
     """
     Posts a new message from a user to a specific group.
     """
-    # We use timezone.utc to ensure the timestamp is timezone-aware,
-    # matching the TIMESTAMPTZ column type in your database.
+    
+    
     current_timestamp = datetime.now(timezone.utc)
 
     query = """
@@ -370,7 +370,7 @@ async def send_group_message(
     """
     
     try:
-        # Execute the INSERT query
+        
         inserted_row = await db.fetchrow(
             query,
             group_id,
@@ -383,12 +383,12 @@ async def send_group_message(
         if not inserted_row:
             raise HTTPException(status_code=500, detail="Failed to create message.")
 
-        # To return the poster's name, we need to fetch it
+        
         user_query = "SELECT username FROM users WHERE user_id = $1"
         user_record = await db.fetchrow(user_query, inserted_row['poster_id'])
         poster_name = user_record['username'] if user_record else "Unknown User"
 
-        # Construct the response object matching the ChatMessage model
+        
         response_message = ChatMessage(
             poster_id=inserted_row['poster_id'],
             poster_name=poster_name,
@@ -400,13 +400,13 @@ async def send_group_message(
         return response_message
 
     except asyncpg.exceptions.ForeignKeyViolationError:
-        # This error happens if the group_id or user_id does not exist
+        
         raise HTTPException(status_code=404, detail="Group or User not found.")
     except asyncpg.PostgresError as e:
         raise HTTPException(status_code=500, detail=f"Database query failed: {e}")
 
 
-# Add this endpoint to your main.py
+
 
 @app.post("/friend-requests", status_code=201)
 async def send_friend_request(
@@ -422,11 +422,11 @@ async def send_friend_request(
     requester_id = request.requester_id
     addressee_id = request.addressee_id
 
-    # Rule 1: A user cannot send a request to themselves.
+    
     if requester_id == addressee_id:
         raise HTTPException(status_code=400, detail="Cannot send a friend request to yourself.")
 
-    # Rule 2: Enforce canonical order for user IDs to match the database constraint.
+    
     user_one_id = min(requester_id, addressee_id)
     user_two_id = max(requester_id, addressee_id)
     
@@ -437,10 +437,10 @@ async def send_friend_request(
     """
     
     try:
-        # The action_user_id is the person who initiated the request.
+        
         result = await db.execute(query, user_one_id, user_two_id, requester_id)
         if "INSERT 0" in result:
-             # This means no row was inserted, likely due to the ON CONFLICT clause.
+             
             raise HTTPException(status_code=409, detail="A friendship or request already exists between these users.")
             
         return {"message": "Friend request sent successfully."}
@@ -451,7 +451,7 @@ async def send_friend_request(
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
     
 
-    # Add this endpoint to your main.py
+    
 
 @app.patch("/friend-requests/{requester_id}", status_code=200)
 async def update_friend_request(
@@ -465,14 +465,14 @@ async def update_friend_request(
     The user in the request body is the one responding.
     """
     responder_id = update.responder_id
-    new_status = update.action.value # "accepted" or "declined"
+    new_status = update.action.value 
 
-    # Enforce canonical order for the WHERE clause.
+    
     user_one_id = min(requester_id, responder_id)
     user_two_id = max(requester_id, responder_id)
     
-    # This query updates the status only if a pending request exists
-    # from the requester to the responder.
+    
+    
     query = """
         UPDATE friendships
         SET status = $1, action_user_id = $2, updated_at = NOW()
@@ -495,7 +495,7 @@ async def update_friend_request(
         )
 
         if result is None:
-            # No rows were updated, meaning no matching pending request was found.
+            
             raise HTTPException(status_code=404, detail="No pending friend request found to update.")
 
         action_word = "accepted" if new_status == "accepted" else "declined"
@@ -506,9 +506,9 @@ async def update_friend_request(
     
 
 
-    # Add this new endpoint to your main.py file
+    
 
-# Replace the existing get_user_profile function in main.py with this one
+
 
 @app.get("/users/{user_id}/profile", response_model=UserProfile)
 async def get_user_profile(
@@ -521,27 +521,27 @@ async def get_user_profile(
     first picture of each event.
     """
     try:
-        # Query 1: Get basic user info (username, pfp, description)
+        
         user_info_query = "SELECT username, pfp, description FROM users WHERE user_id = $1"
         user_info = await db.fetchrow(user_info_query, user_id)
         
         if not user_info:
             raise HTTPException(status_code=404, detail="User not found.")
 
-        # Query 2: Get the count of accepted friendships
+        
         friend_count_query = """
             SELECT COUNT(*) FROM friendships
             WHERE (user_one_id = $1 OR user_two_id = $1) AND status = 'accepted';
         """
         friend_count = await db.fetchval(friend_count_query, user_id)
 
-        # Query 3: Get the total count of events attended
+        
         event_count_query = 'SELECT COUNT(*) FROM "eventMembers" WHERE user_id = $1'
         event_count = await db.fetchval(event_count_query, user_id)
 
-        # ==================================================================
-        # --- UPDATED QUERY 4: Fetches latest events AND their first picture ---
-        # ==================================================================
+        
+        
+        
         latest_events_query = """
             WITH first_pictures AS (
                 -- This CTE finds the "first" picture for each event.
@@ -572,19 +572,19 @@ async def get_user_profile(
         """
         latest_event_rows = await db.fetch(latest_events_query, user_id)
 
-        # Manually construct the list of EventPreview objects
+        
         latest_events = [
             EventPreview(
                 event_id=row['event_id'],
                 name=row['name'],
                 description=row['description'],
                 dateTime=row['dateTime'],
-                first_picture_url=row['first_picture_url'] # <-- Map the new field
+                first_picture_url=row['first_picture_url'] 
             )
             for row in latest_event_rows
         ]
 
-        # Assemble the final UserProfile object
+        
         user_profile = UserProfile(
             user_id=user_id,
             username=user_info['username'],
@@ -600,7 +600,7 @@ async def get_user_profile(
     except asyncpg.PostgresError as e:
         raise HTTPException(status_code=500, detail=f"Database query failed: {e}")
     
-# Add this new endpoint to your main.py file
+
 
 @app.post("/events/{event_id}/pictures", response_model=EventPictureResponse, status_code=201)
 async def add_picture_to_event(
@@ -615,9 +615,9 @@ async def add_picture_to_event(
     uploader_id = picture_data.uploader_id
 
     try:
-        # --- Security Check ---
-        # Before inserting, verify the uploader is a member of the event.
-        # This prevents random users from adding pictures to events they didn't attend.
+        
+        
+        
         is_member_query = 'SELECT 1 FROM "eventMembers" WHERE event_id = $1 AND user_id = $2'
         member_record = await db.fetchrow(is_member_query, event_id, uploader_id)
         
@@ -627,9 +627,9 @@ async def add_picture_to_event(
                 detail="Forbidden: User is not a member of this event and cannot add pictures."
             )
 
-        # --- Insert the Picture Record ---
-        # The picture_id and uploaded_at are generated automatically by the database.
-        # We use RETURNING * to get the complete new row back in one query.
+        
+        
+        
         insert_query = """
             INSERT INTO event_pictures (event_id, uploader_id, picture_url)
             VALUES ($1, $2, $3)
@@ -640,13 +640,13 @@ async def add_picture_to_event(
             insert_query,
             event_id,
             uploader_id,
-            str(picture_data.picture_url), # Convert HttpUrl object to a string for the DB
+            str(picture_data.picture_url), 
         )
 
         if not new_picture_record:
             raise HTTPException(status_code=500, detail="Failed to save picture information.")
 
-        # Map the database record to our Pydantic response model
+        
         return EventPictureResponse(
             picture_id=new_picture_record['picture_id'],
             event_id=new_picture_record['event_id'],
@@ -656,7 +656,7 @@ async def add_picture_to_event(
         )
         
     except asyncpg.exceptions.ForeignKeyViolationError:
-        # This will trigger if the event_id or uploader_id does not exist in their respective tables.
+        
         raise HTTPException(status_code=404, detail="Event or User not found.")
     except asyncpg.PostgresError as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
@@ -671,14 +671,14 @@ async def get_event_details(
     description, date, a list of attendees, and all associated pictures.
     """
     try:
-        # Query 1: Get the basic event information.
+        
         event_query = 'SELECT event_id, name, description, "dateTime" FROM events WHERE event_id = $1'
         event_info = await db.fetchrow(event_query, event_id)
 
         if not event_info:
             raise HTTPException(status_code=404, detail="Event not found.")
 
-        # Query 2: Get all attendees for the event.
+        
         attendees_query = """
             SELECT u.user_id, u.username, u.pfp
             FROM users u
@@ -688,7 +688,7 @@ async def get_event_details(
         attendee_rows = await db.fetch(attendees_query, event_id)
         attendees = [EventAttendee(**row) for row in attendee_rows]
 
-        # Query 3: Get all pictures for the event (caption removed).
+        
         pictures_query = """
             SELECT
                 p.picture_id,
@@ -702,10 +702,10 @@ async def get_event_details(
             ORDER BY p.display_order ASC, p.uploaded_at ASC;
         """
         picture_rows = await db.fetch(pictures_query, event_id)
-        # The **row syntax will now work correctly because the model and query match.
+        
         pictures = [EventPictureDetail(**row) for row in picture_rows]
 
-        # Assemble the final response object.
+        
         return EventDetail(
             event_id=event_info['event_id'],
             name=event_info['name'],
@@ -718,7 +718,7 @@ async def get_event_details(
     except asyncpg.PostgresError as e:
         raise HTTPException(status_code=500, detail=f"Database query failed: {e}")
     
-# In main.py, replace your existing create_event function with this one
+
 
 @app.post("/events", response_model=EventCreateResponse, status_code=201)
 async def create_event(
@@ -731,7 +731,7 @@ async def create_event(
     """
     try:
         async with db.transaction():
-            # Updated INSERT query to include the location column
+            
             insert_event_query = """
                 INSERT INTO events (name, description, "dateTime", location)
                 VALUES ($1, $2, $3, $4)
@@ -742,7 +742,7 @@ async def create_event(
                 event_data.name,
                 event_data.description,
                 event_data.dateTime,
-                event_data.location  # <-- Pass the new location parameter
+                event_data.location  
             )
 
             if not new_event_id:
@@ -759,7 +759,7 @@ async def create_event(
                 name=event_data.name,
                 description=event_data.description,
                 dateTime=event_data.dateTime,
-                location=event_data.location # <-- Include location in the response
+                location=event_data.location 
             )
 
     except asyncpg.exceptions.ForeignKeyViolationError:
@@ -769,7 +769,7 @@ async def create_event(
 
 
 
-# --- API Endpoints ---
+
 
 @app.post("/users", response_model=UserAuthResponse, status_code=200)
 async def get_or_create_user(
@@ -783,24 +783,24 @@ async def get_or_create_user(
       unique, temporary username and returns the new user_id.
     """
     try:
-        # Step 1: Check if a user with this auth0_sub already exists.
+        
         find_user_query = "SELECT user_id FROM users WHERE auth0_sub = $1"
         existing_user_id = await db.fetchval(find_user_query, auth_data.auth0_sub)
 
-        # If the user is found, return their existing UUID.
+        
         if existing_user_id:
             return UserAuthResponse(user_id=existing_user_id)
         
-        # Step 2: If the user does not exist, create a new one.
+        
         else:
-            # The user_id must be generated by the application since the DB
-            # schema doesn't have a default for it.
+            
+            
             new_user_id = uuid.uuid4()
             
-            # Since 'username' is UNIQUE and NOT NULL, we must provide one.
-            # We'll generate a unique, temporary username that the user can
-            # update later via a different profile-editing endpoint.
-            # Using a slice of the new UUID is a good way to ensure uniqueness.
+            
+            
+            
+            
             new_username = f"user_{new_user_id.hex[:12]}"
 
             insert_user_query = """
@@ -814,12 +814,12 @@ async def get_or_create_user(
                 new_username
             )
 
-            # Return the newly created user's UUID.
+            
             return UserAuthResponse(user_id=new_user_id)
 
     except asyncpg.PostgresError as e:
-        # This will catch potential unique constraint violations if two requests
-        # try to create the same user at the exact same time.
+        
+        
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
@@ -833,34 +833,34 @@ async def edit_user(
     Updates a user's profile information.
     Only the fields provided in the request body will be updated.
     """
-    # Use Pydantic's .model_dump() with exclude_unset=True to get a dict
-    # of only the fields that the user actually sent.
+    
+    
     update_fields = update_data.model_dump(exclude_unset=True)
 
-    # If the user sent an empty request body, there's nothing to update.
+    
     if not update_fields:
         raise HTTPException(status_code=400, detail="No update data provided.")
 
-    # --- Dynamically build the SQL UPDATE query ---
+    
     set_clauses = []
     params = []
     param_counter = 1
 
     for key, value in update_fields.items():
-        # Using f-strings to build the query structure, but passing the
-        # actual values as parameters to prevent SQL injection.
+        
+        
         set_clauses.append(f'"{key}" = ${param_counter}')
         params.append(value)
         param_counter += 1
 
-    # Join the individual SET clauses with a comma
+    
     set_clause_str = ", ".join(set_clauses)
     
-    # Final parameter will be the user_id for the WHERE clause
+    
     params.append(user_id)
     
-    # Construct the final query
-    # The RETURNING * clause is crucial; it returns the entire updated row.
+    
+    
     query = f"""
         UPDATE users
         SET {set_clause_str}
@@ -872,21 +872,21 @@ async def edit_user(
         updated_user_record = await db.fetchrow(query, *params)
 
         if not updated_user_record:
-            # This means the user_id in the URL did not match any user.
+            
             raise HTTPException(status_code=404, detail="User not found.")
 
-        # If the update was successful, return the updated user data.
+        
         return UserUpdateResponse(**updated_user_record)
 
     except asyncpg.exceptions.UniqueViolationError:
-        # This will trigger if the user tries to change their username to one
-        # that is already taken by another user.
+        
+        
         raise HTTPException(status_code=409, detail="Username is already taken.")
     except asyncpg.PostgresError as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
-# No changes are needed to this function's logic, but here it is for clarity.
-# The `location` field from the updated EventUpdateRequest model will be handled automatically.
+
+
 
 @app.patch("/events/{event_id}", response_model=EventCreateResponse)
 async def edit_event(
