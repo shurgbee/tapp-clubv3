@@ -6,7 +6,7 @@ import {
   Image,
   Pressable,
 } from "react-native";
-import { Stack } from "expo-router";
+import { Stack, Link } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import dayjs from "dayjs";
 
@@ -93,9 +93,11 @@ export default function ProfileScreen() {
           </View>
 
           {/* Edit Profile Button */}
-          <Pressable style={styles.editButton}>
-            <Text style={styles.editButtonText}>Edit Profile</Text>
-          </Pressable>
+          <Link href="/profile/edit" asChild>
+            <Pressable style={styles.editButton}>
+              <Text style={styles.editButtonText}>Edit Profile</Text>
+            </Pressable>
+          </Link>
         </View>
 
         {/* Events Section */}
