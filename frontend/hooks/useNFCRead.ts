@@ -8,6 +8,9 @@ import NfcManager, {
   TagEvent,
 } from "react-native-nfc-manager";
 
+// For error checking
+const NfcErrorClass = NfcError as any;
+
 interface UseNFCOptions {
   onTagDetected?: (tag: TagEvent) => void;
   autoInit?: boolean;
@@ -18,11 +21,13 @@ interface UseNFCReturn {
   isScanning: boolean;
   isSupported: boolean;
   isEnabled: boolean;
+  isReading: boolean;
   startScanning: () => Promise<void>;
   stopScanning: () => Promise<void>;
   writeNFC: (message: string) => Promise<boolean>;
   readTag: () => Promise<TagEvent | null>;
   readHCEDevice: (aid?: number[]) => Promise<any>;
+  cancelRead: () => Promise<void>;
 }
 
 /**
@@ -48,6 +53,7 @@ export function useNFCRead(
   const [isScanning, setIsScanning] = useState(false);
   const [isSupported, setIsSupported] = useState(false);
   const [isEnabled, setIsEnabled] = useState(false);
+  const [isReading, setIsReading] = useState(false);
   const cleanupRef = useRef<(() => void) | null>(null);
 
   // Initialize NFC Manager
@@ -348,6 +354,7 @@ export function useNFCRead(
 
       try {
         console.log("=== Reading HCE Device ===");
+        setIsReading(true);
 
         // Request IsoDep technology (required for HCE communication)
         await NfcManager.requestTechnology(NfcTech.IsoDep, {
@@ -563,10 +570,20 @@ export function useNFCRead(
           decodedText: parsedMessage,
         };
       } catch (error: any) {
+        // Check if user cancelled
+        if (
+          error instanceof NfcErrorClass.UserCancel ||
+          error?.message?.includes("cancelled")
+        ) {
+          console.log("User cancelled NFC read");
+          return { success: false, cancelled: true };
+        }
+
         console.error("Error reading HCE device:", error);
         handleNFCError(error);
         return { success: false, error: error.message || String(error) };
       } finally {
+        setIsReading(false);
         try {
           await NfcManager.cancelTechnologyRequest();
         } catch (error: any) {
@@ -577,14 +594,29 @@ export function useNFCRead(
     [isSupported, showAlerts, handleNFCError]
   );
 
+  // Cancel read operation
+  const cancelRead = useCallback(async () => {
+    try {
+      console.log("Canceling read operation...");
+      await NfcManager.cancelTechnologyRequest();
+      setIsReading(false);
+      console.log("Read operation canceled");
+    } catch (error: any) {
+      console.warn("Error canceling read:", error);
+      setIsReading(false);
+    }
+  }, []);
+
   return {
     isScanning,
     isSupported,
     isEnabled,
+    isReading,
     startScanning,
     stopScanning,
     writeNFC,
     readTag,
     readHCEDevice,
+    cancelRead,
   };
 }

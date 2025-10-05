@@ -1,16 +1,25 @@
 import { View, Text, StyleSheet, Pressable } from "react-native";
 import { Stack } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { useNFCRead } from "@/hooks/useNFCRead";
 import { useNFCEmulate } from "@/hooks/useNFCEmulate";
+import { FriendSuccessPopup, FriendSearchPopup } from "@/components";
 
 export default function TapFriendScreen() {
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
+  const [showSearchPopup, setShowSearchPopup] = useState(false);
+  const [friendData, setFriendData] = useState<{
+    uuid: string;
+    name: string;
+    slug?: string;
+  } | null>(null);
   // Initialize NFC reading hook
-  const { isSupported, isEnabled, readHCEDevice } = useNFCRead({
-    autoInit: true,
-    showAlerts: true, // Show alerts for HCE reading
-  });
+  const { isSupported, isEnabled, isReading, readHCEDevice, cancelRead } =
+    useNFCRead({
+      autoInit: true,
+      showAlerts: true, // Show alerts for HCE reading
+    });
 
   const handleRead = useCallback(() => {
     console.log("Someone tapped me!");
@@ -20,18 +29,30 @@ export default function TapFriendScreen() {
   // Handle tapping a friend's phone (reading HCE device)
   const handleTapFriend = useCallback(async () => {
     try {
+      setShowSearchPopup(true);
       const result = await readHCEDevice();
+      setShowSearchPopup(false);
 
       if (result.success) {
         console.log("✅ Successfully read HCE device!");
         console.log("Content:", result.decodedText);
         console.log("Raw data:", result.rawData);
         // TODO: Handle friend connection with the read data
+        // Show success popup
+        setFriendData({
+          uuid: result.decodedText || "unknown",
+          name: result.decodedText || "Friend",
+          slug: undefined,
+        });
+        setShowSuccessPopup(true);
+      } else if (result.cancelled) {
+        console.log("📱 NFC read cancelled by user");
       } else {
         console.error("❌ Failed to read HCE device:", result.error);
       }
     } catch (error) {
       console.error("Error reading HCE device:", error);
+      setShowSearchPopup(false);
     }
   }, [readHCEDevice]);
 
@@ -46,11 +67,64 @@ export default function TapFriendScreen() {
     onRead: handleRead,
   });
 
+  // Handle Get Tapped button press
+  const handleGetTapped = useCallback(async () => {
+    if (isEmulating) {
+      await stopEmulation();
+      setShowSearchPopup(false);
+    } else {
+      setShowSearchPopup(true);
+      await startEmulation();
+    }
+  }, [isEmulating, startEmulation, stopEmulation]);
+
+  // Handle cancel from search popup
+  const handleCancelSearch = useCallback(() => {
+    setShowSearchPopup(false);
+    if (isReading) {
+      cancelRead();
+    }
+    if (isEmulating) {
+      stopEmulation();
+    }
+  }, [isReading, isEmulating, cancelRead, stopEmulation]);
+
   return (
     <>
       <Stack.Screen
         options={{
           title: "Add Friend",
+          headerRight: () => (
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <Pressable
+                onPress={() => setShowSearchPopup(true)}
+                style={{ padding: 8 }}
+              >
+                <MaterialCommunityIcons
+                  name="radar"
+                  size={24}
+                  color="#6366f1"
+                />
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  setFriendData({
+                    uuid: "test-123",
+                    name: "Test User",
+                    slug: "testuser",
+                  });
+                  setShowSuccessPopup(true);
+                }}
+                style={{ padding: 8 }}
+              >
+                <MaterialCommunityIcons
+                  name="account-check"
+                  size={24}
+                  color="#10b981"
+                />
+              </Pressable>
+            </View>
+          ),
         }}
       />
       <View style={styles.container}>
@@ -124,7 +198,7 @@ export default function TapFriendScreen() {
                 isEmulating && styles.actionButtonActive,
                 !isSupported || !isEnabled ? styles.actionButtonDisabled : null,
               ]}
-              onPress={isEmulating ? stopEmulation : startEmulation}
+              onPress={handleGetTapped}
               disabled={!isSupported || !isEnabled || emulateLoading}
             >
               <MaterialCommunityIcons
@@ -143,33 +217,73 @@ export default function TapFriendScreen() {
               style={[
                 styles.actionButton,
                 styles.secondaryButton,
+                isReading && styles.actionButtonReading,
                 !isSupported || !isEnabled ? styles.actionButtonDisabled : null,
               ]}
-              onPress={handleTapFriend}
+              onPress={
+                isReading
+                  ? () => {
+                      cancelRead();
+                      setShowSearchPopup(false);
+                    }
+                  : handleTapFriend
+              }
               disabled={!isSupported || !isEnabled}
             >
               <MaterialCommunityIcons
-                name="nfc-tap"
+                name={isReading ? "nfc-variant" : "nfc-tap"}
                 size={20}
                 color="#fff"
                 style={{ marginRight: 8 }}
               />
-              <Text style={styles.actionButtonText}>Tap Friend</Text>
+              <Text style={styles.actionButtonText}>
+                {isReading ? "Cancel Reading..." : "Tap Friend"}
+              </Text>
             </Pressable>
           </View>
 
-          {/* Alternative Method */}
-          <Pressable style={styles.alternativeButton}>
-            <MaterialCommunityIcons
-              name="qrcode-scan"
-              size={20}
-              color="#6366f1"
-            />
-            <Text style={styles.alternativeButtonText}>
-              Use QR Code Instead
-            </Text>
-          </Pressable>
+          {/* Reading Status Indicator */}
+          {isReading && (
+            <View style={styles.readingIndicator}>
+              <MaterialCommunityIcons
+                name="wifi"
+                size={20}
+                color="#f59e0b"
+                style={{ marginRight: 8 }}
+              />
+              <Text style={styles.readingText}>
+                Hold your phone near the other device...
+              </Text>
+            </View>
+          )}
+
+          {/* Emulating Status Indicator */}
+          {isEmulating && (
+            <View style={styles.emulatingIndicator}>
+              <MaterialCommunityIcons
+                name="nfc-variant"
+                size={20}
+                color="#10b981"
+                style={{ marginRight: 8 }}
+              />
+              <Text style={styles.emulatingText}>
+                Ready to be tapped! Keep app open.
+              </Text>
+            </View>
+          )}
         </View>
+
+        {/* Popups */}
+        <FriendSuccessPopup
+          visible={showSuccessPopup}
+          onClose={() => setShowSuccessPopup(false)}
+          friendData={friendData}
+        />
+
+        <FriendSearchPopup
+          visible={showSearchPopup}
+          onCancel={handleCancelSearch}
+        />
       </View>
     </>
   );
@@ -259,6 +373,9 @@ const styles = StyleSheet.create({
   actionButtonScanning: {
     backgroundColor: "#ef4444",
   },
+  actionButtonReading: {
+    backgroundColor: "#f59e0b",
+  },
   actionButtonDisabled: {
     backgroundColor: "#9ca3af",
     opacity: 0.6,
@@ -268,16 +385,36 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#fff",
   },
-  alternativeButton: {
+  readingIndicator: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    padding: 16,
-    marginTop: 12,
+    justifyContent: "center",
+    backgroundColor: "#fef3c7",
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: "#fbbf24",
   },
-  alternativeButtonText: {
-    fontSize: 16,
-    fontWeight: "500",
-    color: "#6366f1",
+  readingText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#92400e",
+  },
+  emulatingIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#d1fae5",
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: "#34d399",
+  },
+  emulatingText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#065f46",
   },
 });
