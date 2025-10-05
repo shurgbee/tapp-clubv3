@@ -172,9 +172,9 @@ export function FriendSuccessPopup({
               </View>
               <Text style={styles.profileName}>{friendData.name}</Text>
 
-              {/* Accept Button */}
+              {/* Close Button */}
               <Pressable style={styles.acceptButton} onPress={onClose}>
-                <Text style={styles.acceptButtonText}>Accept</Text>
+                <Text style={styles.acceptButtonText}>Done</Text>
               </Pressable>
             </View>
           </Animated.View>

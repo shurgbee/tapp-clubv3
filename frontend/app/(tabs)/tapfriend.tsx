@@ -1,12 +1,17 @@
-import { View, Text, StyleSheet, Pressable } from "react-native";
+import { View, Text, StyleSheet, Pressable, Alert } from "react-native";
 import { Stack } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useCallback, useState } from "react";
 import { useNFCRead } from "@/hooks/useNFCRead";
 import { useNFCEmulate } from "@/hooks/useNFCEmulate";
 import { FriendSuccessPopup, FriendSearchPopup } from "@/components";
+import { useAuth } from "@/contexts/AuthContext";
+
+const API_BASE_URL =
+  process.env.EXPO_PUBLIC_API_URL || "https://api.example.com";
 
 export default function TapFriendScreen() {
+  const { uuid } = useAuth();
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
   const [showSearchPopup, setShowSearchPopup] = useState(false);
   const [friendData, setFriendData] = useState<{
@@ -14,6 +19,7 @@ export default function TapFriendScreen() {
     name: string;
     slug?: string;
   } | null>(null);
+
   // Initialize NFC reading hook
   const { isSupported, isEnabled, isReading, readHCEDevice, cancelRead } =
     useNFCRead({
@@ -23,8 +29,64 @@ export default function TapFriendScreen() {
 
   const handleRead = useCallback(() => {
     console.log("Someone tapped me!");
-    // TODO: Handle incoming friend connection
+    // The receiver doesn't need to do anything - they're just broadcasting their UUID
   }, []);
+
+  // Send friend request to backend
+  const sendFriendRequest = useCallback(
+    async (addresseeId: string) => {
+      if (!uuid) {
+        console.error("No user UUID available");
+        return false;
+      }
+
+      try {
+        console.log("🔄 Sending friend request...");
+        console.log("Requester (me):", uuid);
+        console.log("Addressee (them):", addresseeId);
+
+        const response = await fetch(`${API_BASE_URL}/friend-requests`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            requester_id: uuid,
+            addressee_id: addresseeId,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error("Friend request failed:", errorData);
+
+          if (response.status === 409) {
+            Alert.alert(
+              "Already Friends",
+              "You already have a friend request with this user."
+            );
+          } else {
+            throw new Error(
+              errorData.detail || "Failed to send friend request"
+            );
+          }
+          return false;
+        }
+
+        const data = await response.json();
+        console.log("✅ Friend request sent:", data);
+        return true;
+      } catch (error) {
+        console.error("Error sending friend request:", error);
+        Alert.alert(
+          "Error",
+          "Failed to send friend request. Please try again."
+        );
+        return false;
+      }
+    },
+    [uuid]
+  );
 
   // Handle tapping a friend's phone (reading HCE device)
   const handleTapFriend = useCallback(async () => {
@@ -37,14 +99,26 @@ export default function TapFriendScreen() {
         console.log("✅ Successfully read HCE device!");
         console.log("Content:", result.decodedText);
         console.log("Raw data:", result.rawData);
-        // TODO: Handle friend connection with the read data
-        // Show success popup
-        setFriendData({
-          uuid: result.decodedText || "unknown",
-          name: result.decodedText || "Friend",
-          slug: undefined,
-        });
-        setShowSuccessPopup(true);
+
+        const friendUuid = result.decodedText;
+
+        if (!friendUuid) {
+          Alert.alert("Error", "Could not read friend's ID");
+          return;
+        }
+
+        // Send friend request
+        const success = await sendFriendRequest(friendUuid);
+
+        if (success) {
+          // Show success popup
+          setFriendData({
+            uuid: friendUuid,
+            name: "New Friend",
+            slug: undefined,
+          });
+          setShowSuccessPopup(true);
+        }
       } else if (result.cancelled) {
         console.log("📱 NFC read cancelled by user");
       } else {
@@ -54,16 +128,16 @@ export default function TapFriendScreen() {
       console.error("Error reading HCE device:", error);
       setShowSearchPopup(false);
     }
-  }, [readHCEDevice]);
+  }, [readHCEDevice, sendFriendRequest]);
 
-  // Initialize NFC emulation hook
+  // Initialize NFC emulation hook - broadcast current user's UUID
   const {
     isEmulating,
     startEmulation,
     stopEmulation,
     loading: emulateLoading,
   } = useNFCEmulate({
-    content: "TappClub Friend Connect - Test User 123",
+    content: uuid || "no-user-id",
     onRead: handleRead,
   });
 
