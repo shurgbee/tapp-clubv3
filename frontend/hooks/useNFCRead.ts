@@ -8,6 +8,9 @@ import NfcManager, {
   TagEvent,
 } from "react-native-nfc-manager";
 
+// For error checking
+const NfcErrorClass = NfcError as any;
+
 interface UseNFCOptions {
   onTagDetected?: (tag: TagEvent) => void;
   autoInit?: boolean;
@@ -18,10 +21,13 @@ interface UseNFCReturn {
   isScanning: boolean;
   isSupported: boolean;
   isEnabled: boolean;
+  isReading: boolean;
   startScanning: () => Promise<void>;
   stopScanning: () => Promise<void>;
   writeNFC: (message: string) => Promise<boolean>;
   readTag: () => Promise<TagEvent | null>;
+  readHCEDevice: (aid?: number[]) => Promise<any>;
+  cancelRead: () => Promise<void>;
 }
 
 /**
@@ -33,7 +39,7 @@ interface UseNFCReturn {
  * @param options.showAlerts - Show alert popups on detection (default: true)
  * @returns NFC control methods and state
  */
-export function useNFC(
+export function useNFCRead(
   options: UseNFCOptions | ((tag: TagEvent) => void) = {}
 ): UseNFCReturn {
   // Support both object options and direct callback for backwards compatibility
@@ -47,6 +53,7 @@ export function useNFC(
   const [isScanning, setIsScanning] = useState(false);
   const [isSupported, setIsSupported] = useState(false);
   const [isEnabled, setIsEnabled] = useState(false);
+  const [isReading, setIsReading] = useState(false);
   const cleanupRef = useRef<(() => void) | null>(null);
 
   // Initialize NFC Manager
@@ -325,13 +332,291 @@ export function useNFC(
     }
   }, [isSupported, showAlerts, handleNFCError]);
 
+  /**
+   * Read from HCE (Host Card Emulation) device using IsoDep
+   *
+   * @param aid - Application ID as byte array (default: D2760000850101 for Type 4 NDEF)
+   * @returns Object containing success status and NDEF data
+   */
+  const readHCEDevice = useCallback(
+    async (
+      aid: number[] = [0xd2, 0x76, 0x00, 0x00, 0x85, 0x01, 0x01]
+    ): Promise<any> => {
+      if (!isSupported) {
+        if (showAlerts) {
+          Alert.alert(
+            "NFC Not Supported",
+            "NFC is not supported on this device."
+          );
+        }
+        return { success: false, error: "NFC not supported" };
+      }
+
+      try {
+        console.log("=== Reading HCE Device ===");
+        setIsReading(true);
+
+        // Request IsoDep technology (required for HCE communication)
+        await NfcManager.requestTechnology(NfcTech.IsoDep, {
+          alertMessage:
+            Platform.OS === "ios" ? "Ready to scan HCE device" : undefined,
+        });
+
+        console.log("IsoDep technology acquired");
+
+        // Get basic tag info
+        const tag = await NfcManager.getTag();
+        if (!tag) {
+          throw new Error("Failed to get tag information");
+        }
+        console.log("Tag detected:", {
+          id: tag.id,
+          techTypes: tag.techTypes,
+        });
+
+        // Step 1: SELECT AID (Application ID)
+        const selectAidCommand = [
+          0x00,
+          0xa4,
+          0x04,
+          0x00, // CLA INS P1 P2 for SELECT command
+          aid.length, // Lc: Length of AID
+          ...aid, // AID bytes
+        ];
+
+        console.log(
+          ">>> SELECT AID:",
+          selectAidCommand
+            .map((b) => ("00" + b.toString(16).toUpperCase()).slice(-2))
+            .join(" ")
+        );
+
+        const selectResponse = await NfcManager.isoDepHandler.transceive(
+          selectAidCommand
+        );
+
+        console.log(
+          "<<< SELECT response:",
+          selectResponse
+            .map((b) => ("00" + b.toString(16).toUpperCase()).slice(-2))
+            .join(" ")
+        );
+
+        // Check if SELECT was successful (Status Word: 90 00)
+        const sw1 = selectResponse[selectResponse.length - 2];
+        const sw2 = selectResponse[selectResponse.length - 1];
+
+        if (sw1 !== 0x90 || sw2 !== 0x00) {
+          throw new Error(
+            `SELECT AID failed with status: ${("00" + sw1.toString(16)).slice(
+              -2
+            )} ${("00" + sw2.toString(16)).slice(-2)}`
+          );
+        }
+
+        console.log("✅ AID selected successfully");
+
+        // Step 2: SELECT NDEF Capability Container (CC) file
+        const selectCCCommand = [0x00, 0xa4, 0x00, 0x0c, 0x02, 0xe1, 0x03];
+
+        console.log(
+          ">>> SELECT CC:",
+          selectCCCommand
+            .map((b) => ("00" + b.toString(16).toUpperCase()).slice(-2))
+            .join(" ")
+        );
+
+        const ccResponse = await NfcManager.isoDepHandler.transceive(
+          selectCCCommand
+        );
+
+        console.log(
+          "<<< CC response:",
+          ccResponse
+            .map((b) => ("00" + b.toString(16).toUpperCase()).slice(-2))
+            .join(" ")
+        );
+
+        // Step 3: READ CC file to get NDEF file information
+        const readCCCommand = [0x00, 0xb0, 0x00, 0x00, 0x0f]; // Read 15 bytes
+
+        console.log(
+          ">>> READ CC:",
+          readCCCommand
+            .map((b) => ("00" + b.toString(16).toUpperCase()).slice(-2))
+            .join(" ")
+        );
+
+        const ccData = await NfcManager.isoDepHandler.transceive(readCCCommand);
+
+        console.log(
+          "<<< CC data:",
+          ccData
+            .map((b) => ("00" + b.toString(16).toUpperCase()).slice(-2))
+            .join(" ")
+        );
+
+        // Step 4: SELECT NDEF data file
+        const selectNDEFCommand = [0x00, 0xa4, 0x00, 0x0c, 0x02, 0xe1, 0x04];
+
+        console.log(
+          ">>> SELECT NDEF:",
+          selectNDEFCommand
+            .map((b) => ("00" + b.toString(16).toUpperCase()).slice(-2))
+            .join(" ")
+        );
+
+        const ndefSelectResponse = await NfcManager.isoDepHandler.transceive(
+          selectNDEFCommand
+        );
+
+        console.log(
+          "<<< NDEF select response:",
+          ndefSelectResponse
+            .map((b) => ("00" + b.toString(16).toUpperCase()).slice(-2))
+            .join(" ")
+        );
+
+        // Step 5: READ NDEF data length (first 2 bytes contain length)
+        const readLengthCommand = [0x00, 0xb0, 0x00, 0x00, 0x02];
+
+        console.log(
+          ">>> READ NDEF length:",
+          readLengthCommand
+            .map((b) => ("00" + b.toString(16).toUpperCase()).slice(-2))
+            .join(" ")
+        );
+
+        const lengthData = await NfcManager.isoDepHandler.transceive(
+          readLengthCommand
+        );
+
+        console.log(
+          "<<< Length data:",
+          lengthData
+            .map((b) => ("00" + b.toString(16).toUpperCase()).slice(-2))
+            .join(" ")
+        );
+
+        // Extract NDEF message length (remove status bytes)
+        const ndefLength = (lengthData[0] << 8) | lengthData[1];
+        console.log("NDEF message length:", ndefLength);
+
+        // Step 6: READ actual NDEF data
+        const readDataCommand = [
+          0x00,
+          0xb0,
+          0x00,
+          0x02,
+          Math.min(ndefLength, 0xf0),
+        ]; // Read from offset 2
+
+        console.log(
+          ">>> READ NDEF data:",
+          readDataCommand
+            .map((b) => ("00" + b.toString(16).toUpperCase()).slice(-2))
+            .join(" ")
+        );
+
+        const ndefData = await NfcManager.isoDepHandler.transceive(
+          readDataCommand
+        );
+
+        console.log(
+          "<<< NDEF data:",
+          ndefData
+            .map((b) => ("00" + b.toString(16).toUpperCase()).slice(-2))
+            .join(" ")
+        );
+
+        // Remove status bytes (last 2 bytes)
+        const actualData = ndefData.slice(0, -2);
+
+        // Try to parse NDEF message
+        let parsedMessage = null;
+        try {
+          // Convert number array to Uint8Array for NDEF decoding
+          const uint8Data = new Uint8Array(actualData);
+          parsedMessage = Ndef.text.decodePayload(uint8Data);
+          console.log("Decoded NDEF text:", parsedMessage);
+        } catch (e) {
+          console.warn("Could not decode as text NDEF, returning raw data");
+        }
+
+        // Show success message
+        if (Platform.OS === "ios") {
+          await NfcManager.setAlertMessageIOS(
+            "HCE device read successfully! ✅"
+          );
+        }
+
+        if (showAlerts) {
+          Alert.alert(
+            "HCE Device Read! 📱",
+            parsedMessage
+              ? `Content: ${parsedMessage}`
+              : `Data: ${actualData
+                  .map((b) => ("00" + b.toString(16)).slice(-2))
+                  .join(" ")}`,
+            [{ text: "OK" }]
+          );
+        }
+
+        return {
+          success: true,
+          tag,
+          ndefLength,
+          rawData: actualData,
+          decodedText: parsedMessage,
+        };
+      } catch (error: any) {
+        // Check if user cancelled
+        if (
+          error instanceof NfcErrorClass.UserCancel ||
+          error?.message?.includes("cancelled")
+        ) {
+          console.log("User cancelled NFC read");
+          return { success: false, cancelled: true };
+        }
+
+        console.error("Error reading HCE device:", error);
+        handleNFCError(error);
+        return { success: false, error: error.message || String(error) };
+      } finally {
+        setIsReading(false);
+        try {
+          await NfcManager.cancelTechnologyRequest();
+        } catch (error: any) {
+          console.warn("Error canceling technology request:", error);
+        }
+      }
+    },
+    [isSupported, showAlerts, handleNFCError]
+  );
+
+  // Cancel read operation
+  const cancelRead = useCallback(async () => {
+    try {
+      console.log("Canceling read operation...");
+      await NfcManager.cancelTechnologyRequest();
+      setIsReading(false);
+      console.log("Read operation canceled");
+    } catch (error: any) {
+      console.warn("Error canceling read:", error);
+      setIsReading(false);
+    }
+  }, []);
+
   return {
     isScanning,
     isSupported,
     isEnabled,
+    isReading,
     startScanning,
     stopScanning,
     writeNFC,
     readTag,
+    readHCEDevice,
+    cancelRead,
   };
 }

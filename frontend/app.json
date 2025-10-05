@@ -25,8 +25,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#6366f1"
       },
-      "package": "com.tappclub.app",
-      "permissions": ["android.permission.NFC"]
+      "package": "com.tappclub.app"
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -45,7 +44,8 @@
         {
           "nfcPermission": "Allow TappClub to use NFC to connect with friends"
         }
-      ]
+      ],
+      "./plugins/react-native-hce.plugin.js"
     ],
     "experiments": {
       "typedRoutes": true
