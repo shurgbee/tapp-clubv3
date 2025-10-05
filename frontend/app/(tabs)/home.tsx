@@ -10,7 +10,7 @@ import {
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import dayjs from "dayjs";
 import type { FeedItem } from "../../types";
-import { useAuth0 } from "react-native-auth0";
+import { useAuth } from "../../contexts/AuthContext";
 
 // Mock data for demonstration
 const mockFeedData: FeedItem[] = [
@@ -75,7 +75,7 @@ const mockFeedData: FeedItem[] = [
 
 
 export default function HomeScreen() {
-  const {user} = useAuth0()
+  const { user, uuid } = useAuth();
   return (
     <>
       <Stack.Screen

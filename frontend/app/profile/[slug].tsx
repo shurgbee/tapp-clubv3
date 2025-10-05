@@ -9,7 +9,7 @@ import {
 import { useLocalSearchParams, Stack } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import dayjs from "dayjs";
-import { useAuth0 } from "react-native-auth0";
+import { useAuth } from "../../contexts/AuthContext";
 
 // Mock user profiles data
 const mockUserProfiles: { [key: string]: any } = {
@@ -85,7 +85,7 @@ export default function ProfileDetailScreen() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const userData = mockUserProfiles[slug] || mockUserProfiles.joshua_l;
   const userEvents = mockOtherUserEvents[slug] || [];
-  const {user} = useAuth0();
+  const { user, uuid } = useAuth();
 
   return (
     <>
