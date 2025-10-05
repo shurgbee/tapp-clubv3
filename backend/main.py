@@ -92,16 +92,6 @@ class GroupChat(BaseModel):
     class Config:
         from_attributes = True 
 
-class GroupPreview(BaseModel):
-    group_id: uuid.UUID
-    group_name: str
-    pfp: Optional[uuid.UUID]
-    last_message_content: Optional[str]
-    last_message_timestamp: Optional[datetime]
-    last_message_poster_name: Optional[str]
-
-    class Config:
-        from_attributes = True 
 
 class SendMessageRequest(BaseModel):
     user_id: uuid.UUID
@@ -128,6 +118,13 @@ class FriendRequestUpdate(BaseModel):
 
 
 
+
+class AddEventMembersRequest(BaseModel):
+    user_ids: List[uuid.UUID]
+
+class AddEventMembersResponse(BaseModel):
+    message: str
+    added_count: int
 
 class EventPreview(BaseModel):
     event_id: uuid.UUID
@@ -238,6 +235,85 @@ class EventUpdateRequest(BaseModel):
 
 
 
+class GroupCreateRequest(BaseModel):
+    creator_id: uuid.UUID
+    name: str
+    
+    pfp: Optional[HttpUrl] = None
+    initial_member_ids: List[uuid.UUID]
+
+class GroupCreateResponse(BaseModel):
+    group_id: uuid.UUID
+    name: str
+    
+    pfp: Optional[str] = None
+
+class GroupPreview(BaseModel):
+    group_id: uuid.UUID
+    group_name: str
+    
+    pfp: Optional[str] = None
+    last_message_content: Optional[str]
+    last_message_timestamp: Optional[datetime]
+    last_message_poster_name: Optional[str]
+
+    
+
+class AddMembersRequest(BaseModel):
+    user_ids: List[uuid.UUID]
+
+class AddMembersResponse(BaseModel):
+    message: str
+    added_count: int
+
+
+
+class PostCreateRequest(BaseModel):
+    event_id: uuid.UUID
+    poster_id: uuid.UUID
+    title: str
+    description: Optional[str] = None
+
+class PostResponse(BaseModel):
+    post_id: uuid.UUID
+    event_id: uuid.UUID
+    poster_id: uuid.UUID
+    title: str
+    description: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+
+
+
+class PostPictureDetail(BaseModel):
+    picture_id: uuid.UUID
+    picture_url: str
+    uploaded_at: datetime
+
+class PosterInfo(BaseModel):
+    user_id: uuid.UUID
+    username: str
+    pfp: Optional[uuid.UUID]
+
+class PostDetailResponse(BaseModel):
+    post_id: uuid.UUID
+    title: str
+    description: Optional[str]
+    created_at: datetime
+    poster: PosterInfo
+    pictures: List[PostPictureDetail]
+
+
+
+class PostPictureCreate(BaseModel):
+    uploader_id: uuid.UUID
+    picture_url: HttpUrl
+
+class PostPictureResponse(BaseModel):
+    picture_id: uuid.UUID
+    post_id: uuid.UUID
+    picture_url: str
+    uploaded_at: datetime
 
 @app.get("/users/{user_id}/groups", response_model=List[GroupPreview])
 async def get_user_groups(
@@ -931,5 +1007,291 @@ async def edit_event(
 
         return EventCreateResponse(**updated_event_record)
 
+    except asyncpg.PostgresError as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+    
+
+
+@app.post("/groups", response_model=GroupCreateResponse, status_code=201)
+async def create_group_with_members(
+    group_data: GroupCreateRequest,
+    db: asyncpg.Connection = Depends(get_db_connection)
+):
+    """
+    Creates a new group and adds an initial list of members.
+    The group creator is automatically included as a member.
+    This is performed in a single database transaction.
+    """
+    try:
+        async with db.transaction():
+            
+            
+            pfp_url_for_db = str(group_data.pfp) if group_data.pfp else None
+
+            
+            insert_group_query = """
+                INSERT INTO groups (name, pfp)
+                VALUES ($1, $2)
+                RETURNING group_id;
+            """
+            new_group_id = await db.fetchval(
+                insert_group_query,
+                group_data.name,
+                pfp_url_for_db  
+            )
+
+            if not new_group_id:
+                raise HTTPException(status_code=500, detail="Failed to create the group.")
+
+            
+            unique_member_ids = set(group_data.initial_member_ids)
+            unique_member_ids.add(group_data.creator_id)
+            members_to_insert = [(new_group_id, member_id) for member_id in unique_member_ids]
+
+            add_members_query = """
+                INSERT INTO "groupMembers" (group_id, user_id)
+                VALUES ($1, $2);
+            """
+            await db.executemany(add_members_query, members_to_insert)
+
+            
+            return GroupCreateResponse(
+                group_id=new_group_id,
+                name=group_data.name,
+                pfp=pfp_url_for_db 
+            )
+
+    except asyncpg.exceptions.ForeignKeyViolationError:
+        raise HTTPException(status_code=404, detail="One or more users to be added were not found.")
+    except asyncpg.PostgresError as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+    
+
+
+@app.post("/groups/{group_id}/members", response_model=AddMembersResponse, status_code=200)
+async def add_members_to_group(
+    group_id: uuid.UUID,
+    request: AddMembersRequest,
+    db: asyncpg.Connection = Depends(get_db_connection)
+):
+    """
+    Adds one or more users to an existing group.
+    If a user is already a member, they will be ignored, not duplicated.
+    """
+    user_ids_to_add = request.user_ids
+    
+    if not user_ids_to_add:
+        raise HTTPException(status_code=400, detail="No user IDs provided to add.")
+
+    
+    unique_member_ids = set(user_ids_to_add)
+    
+    
+    members_to_insert = [(group_id, user_id) for user_id in unique_member_ids]
+
+    
+    
+    query = """
+        INSERT INTO "groupMembers" (group_id, user_id)
+        SELECT * FROM UNNEST($1::uuid[], $2::uuid[])
+        ON CONFLICT (group_id, user_id) DO NOTHING;
+    """
+    
+    
+    group_ids_list = [group_id] * len(unique_member_ids)
+    user_ids_list = list(unique_member_ids)
+
+    try:
+        
+        result = await db.execute(
+            'INSERT INTO "groupMembers" (group_id, user_id) SELECT $1, unnest($2::uuid[]) ON CONFLICT (group_id, user_id) DO NOTHING',
+            group_id,
+            user_ids_list
+        )
+        
+        
+        
+        added_count = int(result.split()[-1])
+
+        return AddMembersResponse(
+            message=f"Operation complete. {added_count} new member(s) added to the group.",
+            added_count=added_count
+        )
+
+    except asyncpg.exceptions.ForeignKeyViolationError:
+        
+        raise HTTPException(status_code=404, detail="Group or one or more users not found.")
+    except asyncpg.PostgresError as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+    
+
+
+@app.post("/posts", response_model=PostResponse, status_code=201)
+async def create_post(
+    post_data: PostCreateRequest,
+    db: asyncpg.Connection = Depends(get_db_connection)
+):
+    """Creates a new post associated with an event."""
+    try:
+        
+        
+        is_member_query = 'SELECT 1 FROM "eventMembers" WHERE event_id = $1 AND user_id = $2'
+        member_record = await db.fetchrow(is_member_query, post_data.event_id, post_data.poster_id)
+        if not member_record:
+            raise HTTPException(status_code=403, detail="Forbidden: User is not a member of this event.")
+
+        
+        insert_query = """
+            INSERT INTO posts (event_id, poster_id, title, description)
+            VALUES ($1, $2, $3, $4)
+            RETURNING *;
+        """
+        new_post_record = await db.fetchrow(
+            insert_query,
+            post_data.event_id,
+            post_data.poster_id,
+            post_data.title,
+            post_data.description
+        )
+        return PostResponse(**new_post_record)
+
+    except asyncpg.exceptions.ForeignKeyViolationError:
+        raise HTTPException(status_code=404, detail="Event or User not found.")
+    except asyncpg.PostgresError as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+    
+
+
+
+@app.get("/posts/{post_id}", response_model=PostDetailResponse)
+async def get_post_details(
+    post_id: uuid.UUID,
+    db: asyncpg.Connection = Depends(get_db_connection)
+):
+    """Retrieves the full details for a single post, including pictures."""
+    try:
+        
+        post_query = """
+            SELECT p.*, u.username, u.pfp
+            FROM posts p
+            JOIN users u ON p.poster_id = u.user_id
+            WHERE p.post_id = $1;
+        """
+        post_info = await db.fetchrow(post_query, post_id)
+        if not post_info:
+            raise HTTPException(status_code=404, detail="Post not found.")
+
+        
+        pictures_query = """
+            SELECT picture_id, picture_url, uploaded_at
+            FROM post_pictures
+            WHERE post_id = $1
+            ORDER BY display_order ASC, uploaded_at ASC;
+        """
+        picture_rows = await db.fetch(pictures_query, post_id)
+        pictures = [PostPictureDetail(**row) for row in picture_rows]
+        
+        
+        return PostDetailResponse(
+            post_id=post_info['post_id'],
+            title=post_info['title'],
+            description=post_info['description'],
+            created_at=post_info['created_at'],
+            poster=PosterInfo(
+                user_id=post_info['poster_id'],
+                username=post_info['username'],
+                pfp=post_info['pfp']
+            ),
+            pictures=pictures
+        )
+
+    except asyncpg.PostgresError as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+    
+
+
+
+@app.post("/posts/{post_id}/pictures", response_model=PostPictureResponse, status_code=201)
+async def add_picture_to_post(
+    post_id: uuid.UUID,
+    picture_data: PostPictureCreate,
+    db: asyncpg.Connection = Depends(get_db_connection)
+):
+    """Adds a picture to a specific post's gallery."""
+    try:
+        async with db.transaction():
+            
+            post_owner_query = "SELECT poster_id FROM posts WHERE post_id = $1"
+            poster_id = await db.fetchval(post_owner_query, post_id)
+            
+            if poster_id is None:
+                raise HTTPException(status_code=404, detail="Post not found.")
+            if poster_id != picture_data.uploader_id:
+                raise HTTPException(status_code=403, detail="Forbidden: Only the original poster can add pictures.")
+
+            
+            insert_query = """
+                INSERT INTO post_pictures (post_id, picture_url)
+                VALUES ($1, $2)
+                RETURNING *;
+            """
+            new_picture = await db.fetchrow(
+                insert_query,
+                post_id,
+                str(picture_data.picture_url)
+            )
+            return PostPictureResponse(**new_picture)
+
+    except asyncpg.exceptions.ForeignKeyViolationError:
+        raise HTTPException(status_code=404, detail="Post or User not found.")
+    except asyncpg.PostgresError as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+    
+
+
+@app.post("/events/{event_id}/members", response_model=AddEventMembersResponse, status_code=200)
+async def add_members_to_event(
+    event_id: uuid.UUID,
+    request: AddEventMembersRequest,
+    db: asyncpg.Connection = Depends(get_db_connection)
+):
+    """
+    Adds one or more users to an existing event.
+    If a user is already a member of the event, they will be ignored.
+    """
+    user_ids_to_add = request.user_ids
+    
+    if not user_ids_to_add:
+        raise HTTPException(status_code=400, detail="No user IDs provided to add.")
+
+    
+    unique_member_ids = set(user_ids_to_add)
+    user_ids_list = list(unique_member_ids)
+
+    
+    
+    
+    query = """
+        INSERT INTO "eventMembers" (event_id, user_id)
+        SELECT $1, unnest($2::uuid[])
+        ON CONFLICT (event_id, user_id) DO NOTHING;
+    """
+    
+    try:
+        
+        result = await db.execute(query, event_id, user_ids_list)
+        
+        
+        
+        added_count = int(result.split()[-1])
+
+        return AddEventMembersResponse(
+            message=f"Operation complete. {added_count} new member(s) added to the event.",
+            added_count=added_count
+        )
+
+    except asyncpg.exceptions.ForeignKeyViolationError:
+        
+        raise HTTPException(status_code=404, detail="Event or one or more users not found.")
     except asyncpg.PostgresError as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
