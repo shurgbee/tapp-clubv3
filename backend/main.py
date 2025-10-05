@@ -303,6 +303,18 @@ class EventPictureResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class User(BaseModel):
+    user_id: uuid.UUID
+    username: str
+    pfp: Optional[uuid.UUID]
+    description: Optional[str]
+    sub: str
+
+    class Config:
+        from_attributes = True
+
+# --- API Endpoints ---
+# In your main.py file, replace the get_user_groups function with this one:
 
 
 
@@ -634,6 +646,36 @@ async def send_group_message(
     except asyncpg.PostgresError as e:
         raise HTTPException(status_code=500, detail=f"Database query failed: {e}")
 
+@app.get("/users/by-sub/{sub}", response_model=User)
+async def get_user_by_sub(
+    sub: str,
+    db: asyncpg.Connection = Depends(get_db_connection)
+):
+    """
+    Retrieves a user's information by their Auth0 sub (subject ID).
+    The sub is a unique identifier from Auth0 for each user.
+    """
+    query = "SELECT user_id, username, pfp, description, auth0_sub FROM users WHERE auth0_sub = $1"
+    
+    try:
+        user_row = await db.fetchrow(query, sub)
+        
+        if not user_row:
+            raise HTTPException(status_code=404, detail="User not found with the provided sub.")
+        
+        # Construct the User model from the database row
+        user = User(
+            user_id=user_row['user_id'],
+            username=user_row['username'],
+            pfp=user_row['pfp'],
+            description=user_row['description'],
+            sub=user_row['auth0_sub']
+        )
+        
+        return user
+        
+    except asyncpg.PostgresError as e:
+        raise HTTPException(status_code=500, detail=f"Database query failed: {e}")
 
 
 
