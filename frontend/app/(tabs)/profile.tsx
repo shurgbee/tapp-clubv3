@@ -5,48 +5,86 @@ import {
   StyleSheet,
   Image,
   Pressable,
+  ActivityIndicator,
+  RefreshControl,
 } from "react-native";
-import { Stack, Link } from "expo-router";
+import { Stack, Link, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
-
-// Mock user data
-const mockUserData = {
-  user_id: "current-user",
-  name: "Davis Johnson",
-  slug: "davis_j",
-  pfp: "https://i.pravatar.cc/150?img=33",
-  location: "San Francisco, CA",
-};
-
-// Mock user events
-const mockUserEvents = [
-  {
-    event_id: "e1",
-    name: "Coffee with team",
-    description: "Weekly team sync at Blue Bottle",
-    dateTime: "2024-03-18T10:00:00Z",
-    coverUrl:
-      "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=800",
-  },
-  {
-    event_id: "e2",
-    name: "Weekend Hiking",
-    description: "Beautiful trails in Marin Headlands",
-    dateTime: "2024-03-16T08:00:00Z",
-    coverUrl: "https://images.unsplash.com/photo-1551632811-561732d1e306?w=800",
-  },
-  {
-    event_id: "e3",
-    name: "Music Festival",
-    description: "Amazing performances by local artists",
-    dateTime: "2024-03-12T19:00:00Z",
-    coverUrl:
-      "https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?w=800",
-  },
-];
+import { useAuth } from "../../contexts/AuthContext";
+import { getUserProfile } from "../../api/users";
 
 export default function ProfileScreen() {
+  const router = useRouter();
+  const { uuid, user } = useAuth();
+
+  const {
+    data: profileData,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: ["userProfile", uuid],
+    queryFn: () => getUserProfile(uuid),
+    enabled: !!uuid,
+  });
+
+  const handleEventPress = (event: any) => {
+    router.push({
+      pathname: "/post/create",
+      params: {
+        event_id: event.event_id,
+        event_name: event.name,
+      },
+    });
+  };
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <>
+        <Stack.Screen
+          options={{
+            title: "Profile",
+          }}
+        />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#6366f1" />
+          <Text style={styles.loadingText}>Loading profile...</Text>
+        </View>
+      </>
+    );
+  }
+
+  // Error state
+  if (isError) {
+    return (
+      <>
+        <Stack.Screen
+          options={{
+            title: "Profile",
+          }}
+        />
+        <View style={styles.errorContainer}>
+          <MaterialCommunityIcons
+            name="alert-circle"
+            size={48}
+            color="#ef4444"
+          />
+          <Text style={styles.errorText}>Failed to load profile</Text>
+          <Text style={styles.errorSubtext}>
+            {error instanceof Error ? error.message : "Please try again"}
+          </Text>
+          <Pressable style={styles.retryButton} onPress={() => refetch()}>
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </Pressable>
+        </View>
+      </>
+    );
+  }
+
   return (
     <>
       <Stack.Screen
@@ -59,35 +97,37 @@ export default function ProfileScreen() {
           ),
         }}
       />
-      <ScrollView style={styles.container}>
+      <ScrollView
+        style={styles.container}
+        refreshControl={
+          <RefreshControl refreshing={isLoading} onRefresh={refetch} />
+        }
+      >
         {/* Profile Header */}
         <View style={styles.header}>
           <Image
-            source={{ uri: mockUserData.pfp }}
+            source={{ uri: profileData?.pfp }}
             style={styles.profileImage}
           />
-          <Text style={styles.name}>{mockUserData.name}</Text>
-          <Text style={styles.username}>@{mockUserData.slug}</Text>
-          {mockUserData.location && (
-            <View style={styles.locationContainer}>
-              <MaterialCommunityIcons
-                name="map-marker"
-                size={16}
-                color="#6b7280"
-              />
-              <Text style={styles.location}>{mockUserData.location}</Text>
-            </View>
+          <Text style={styles.name}>{user?.name || "User"}</Text>
+          <Text style={styles.username}>@{profileData?.username}</Text>
+          {profileData?.description && (
+            <Text style={styles.description}>{profileData.description}</Text>
           )}
 
           {/* Stats */}
           <View style={styles.statsContainer}>
             <View style={styles.stat}>
-              <Text style={styles.statNumber}>23</Text>
+              <Text style={styles.statNumber}>
+                {profileData?.event_count || 0}
+              </Text>
               <Text style={styles.statLabel}>Events</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.stat}>
-              <Text style={styles.statNumber}>47</Text>
+              <Text style={styles.statNumber}>
+                {profileData?.friend_count || 0}
+              </Text>
               <Text style={styles.statLabel}>Friends</Text>
             </View>
           </View>
@@ -104,10 +144,17 @@ export default function ProfileScreen() {
         <View style={styles.eventsSection}>
           <Text style={styles.sectionTitle}>My Events</Text>
 
-          {mockUserEvents.map((event) => (
-            <View key={event.event_id} style={styles.eventCard}>
+          {profileData?.latest_events?.map((event) => (
+            <Pressable
+              key={event.event_id}
+              style={styles.eventCard}
+              onPress={() => handleEventPress(event)}
+            >
               <Image
-                source={{ uri: event.coverUrl }}
+                source={{
+                  uri:
+                    event.first_picture_url || "https://via.placeholder.com/80",
+                }}
                 style={styles.eventImage}
               />
               <View style={styles.eventInfo}>
@@ -126,16 +173,19 @@ export default function ProfileScreen() {
                   </Text>
                 </View>
               </View>
-              <MaterialCommunityIcons
-                name="chevron-right"
-                size={24}
-                color="#9ca3af"
-              />
-            </View>
+              <View style={styles.createPostButton}>
+                <MaterialCommunityIcons
+                  name="plus-circle"
+                  size={28}
+                  color="#6366f1"
+                />
+              </View>
+            </Pressable>
           ))}
 
           {/* Empty State */}
-          {mockUserEvents.length === 0 && (
+          {(!profileData?.latest_events ||
+            profileData.latest_events.length === 0) && (
             <View style={styles.emptyState}>
               <MaterialCommunityIcons
                 name="calendar-blank"
@@ -188,15 +238,12 @@ const styles = StyleSheet.create({
     color: "#6b7280",
     marginBottom: 8,
   },
-  locationContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    marginBottom: 24,
-  },
-  location: {
+  description: {
     fontSize: 14,
     color: "#6b7280",
+    textAlign: "center",
+    marginBottom: 16,
+    paddingHorizontal: 32,
   },
   statsContainer: {
     flexDirection: "row",
@@ -280,6 +327,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#6b7280",
   },
+  createPostButton: {
+    padding: 4,
+  },
   emptyState: {
     alignItems: "center",
     justifyContent: "center",
@@ -295,5 +345,48 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#6b7280",
     marginTop: 4,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#f9fafb",
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: "#6b7280",
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#f9fafb",
+    padding: 20,
+  },
+  errorText: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#111827",
+    marginTop: 16,
+  },
+  errorSubtext: {
+    fontSize: 14,
+    color: "#6b7280",
+    marginTop: 8,
+    textAlign: "center",
+  },
+  retryButton: {
+    marginTop: 24,
+    backgroundColor: "#6366f1",
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+  },
+  retryButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#fff",
   },
 });
