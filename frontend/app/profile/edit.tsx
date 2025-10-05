@@ -14,6 +14,7 @@ import { useRouter, Stack } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { uploadImageToR2 } from "../../utils/r2Upload";
 
 // Mock current user data
 const mockCurrentUser = {
@@ -41,6 +42,7 @@ export default function EditProfileScreen() {
   );
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   const pickImage = async () => {
     try {
@@ -63,7 +65,26 @@ export default function EditProfileScreen() {
       });
 
       if (!result.canceled && result.assets[0]) {
-        setProfileImage(result.assets[0].uri);
+        // Show local preview immediately
+        const localUri = result.assets[0].uri;
+        setProfileImage(localUri);
+
+        // Upload to R2 in background
+        setIsUploadingImage(true);
+        try {
+          const publicUrl = await uploadImageToR2(localUri);
+          setProfileImage(publicUrl);
+          console.log("Image uploaded to R2:", publicUrl);
+        } catch (uploadError) {
+          console.error("Error uploading image:", uploadError);
+          Alert.alert(
+            "Upload Failed",
+            "Failed to upload image. Please try again."
+          );
+          // Keep the local URI as fallback
+        } finally {
+          setIsUploadingImage(false);
+        }
       }
     } catch (error) {
       console.error("Error picking image:", error);
@@ -183,7 +204,11 @@ export default function EditProfileScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Profile Photo</Text>
           <View style={styles.imageContainer}>
-            <Pressable onPress={pickImage} style={styles.imagePicker}>
+            <Pressable
+              onPress={pickImage}
+              style={styles.imagePicker}
+              disabled={isUploadingImage}
+            >
               {profileImage ? (
                 <Image
                   source={{ uri: profileImage }}
@@ -198,11 +223,18 @@ export default function EditProfileScreen() {
                   />
                 </View>
               )}
+              {isUploadingImage && (
+                <View style={styles.uploadingOverlay}>
+                  <ActivityIndicator size="large" color="#6366f1" />
+                </View>
+              )}
               <View style={styles.imageOverlay}>
                 <MaterialCommunityIcons name="camera" size={24} color="#fff" />
               </View>
             </Pressable>
-            <Text style={styles.imageHint}>Tap to change photo</Text>
+            <Text style={styles.imageHint}>
+              {isUploadingImage ? "Uploading..." : "Tap to change photo"}
+            </Text>
           </View>
         </View>
 
@@ -381,6 +413,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: 3,
     borderColor: "#fff",
+  },
+  uploadingOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(255, 255, 255, 0.8)",
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: 60,
   },
   imageHint: {
     marginTop: 12,

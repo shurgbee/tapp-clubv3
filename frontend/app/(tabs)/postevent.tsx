@@ -19,6 +19,7 @@ import * as ImagePicker from "expo-image-picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import dayjs from "dayjs";
 import type { Group } from "../../types";
+import { uploadImageToR2 } from "../../utils/r2Upload";
 
 // Mock user groups
 const mockGroups: Group[] = [
@@ -62,6 +63,7 @@ export default function PostEventScreen() {
   const [isCreating, setIsCreating] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
   const [showGroupPicker, setShowGroupPicker] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   const handlePickImage = async () => {
     try {
@@ -86,7 +88,26 @@ export default function PostEventScreen() {
       });
 
       if (!result.canceled && result.assets[0]) {
-        setCoverImage(result.assets[0].uri);
+        // Show local preview immediately
+        const localUri = result.assets[0].uri;
+        setCoverImage(localUri);
+
+        // Upload to R2 in background
+        setIsUploadingImage(true);
+        try {
+          const publicUrl = await uploadImageToR2(localUri);
+          setCoverImage(publicUrl);
+          console.log("Cover image uploaded to R2:", publicUrl);
+        } catch (uploadError) {
+          console.error("Error uploading image:", uploadError);
+          Alert.alert(
+            "Upload Failed",
+            "Failed to upload cover image. Please try again."
+          );
+          // Keep the local URI as fallback
+        } finally {
+          setIsUploadingImage(false);
+        }
       }
     } catch (error) {
       console.error("Error picking image:", error);
@@ -186,6 +207,7 @@ export default function PostEventScreen() {
             <Pressable
               style={styles.imagePickerButton}
               onPress={handlePickImage}
+              disabled={isUploadingImage}
             >
               {coverImage ? (
                 <Image
@@ -202,6 +224,12 @@ export default function PostEventScreen() {
                   <Text style={styles.imagePlaceholderText}>
                     Add Cover Photo
                   </Text>
+                </View>
+              )}
+              {isUploadingImage && (
+                <View style={styles.uploadingOverlay}>
+                  <ActivityIndicator size="large" color="#6366f1" />
+                  <Text style={styles.uploadingText}>Uploading...</Text>
                 </View>
               )}
             </Pressable>
@@ -515,6 +543,23 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 14,
     color: "#6b7280",
+  },
+  uploadingOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: 8,
+  },
+  uploadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#6366f1",
   },
   dateButton: {
     flexDirection: "row",
