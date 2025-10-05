@@ -1,12 +1,19 @@
 import { Stack } from "expo-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import {Auth0Provider} from 'react-native-auth0';
+import { useEffect } from "react";
 import { HCESessionProvider } from "react-native-hce";
 
 const queryClient = new QueryClient();
+  const domain = process.env.AUTH_DOMAIN;
+  const clientID = process.env.AUTH_CLIENT_ID;
+  console.log(domain);
 
 export default function RootLayout() {
   return (
+    <>
+  <Auth0Provider domain={domain ?? ""} clientId={clientID ?? ""}>
     <GestureHandlerRootView style={{ flex: 1 }}>
       <QueryClientProvider client={queryClient}>
         <HCESessionProvider>
@@ -38,5 +45,7 @@ export default function RootLayout() {
         </HCESessionProvider>
       </QueryClientProvider>
     </GestureHandlerRootView>
+    </Auth0Provider>
+  </>
   );
 }
