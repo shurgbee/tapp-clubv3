@@ -65,3 +65,15 @@ expo-env.d.ts
 
 # Metro
 .metro-health-check*
+
+#android
+android/*
+
+#ios
+ios/*
+
+#fastlane
+fastlane/*
+
+#expo
+expo/*

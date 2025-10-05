@@ -45,6 +45,7 @@
           "nfcPermission": "Allow TappClub to use NFC to connect with friends"
         }
       ],
+      "./plugins/react-native-hce.plugin.js",
       [
         "react-native-auth0",
         {
