@@ -14,9 +14,12 @@ import { useRouter, Stack, useLocalSearchParams } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { uploadImageToR2 } from "../../utils/r2Upload";
+import { createPost, addPostPicture } from "../../api/posts";
+import { useAuth } from "../../contexts/AuthContext";
 
 export default function CreatePostScreen() {
   const router = useRouter();
+  const { uuid } = useAuth();
   const { event_id, event_name } = useLocalSearchParams<{
     event_id: string;
     event_name: string;
@@ -89,56 +92,43 @@ export default function CreatePostScreen() {
       return;
     }
 
+    if (!uuid) {
+      Alert.alert("Error", "User not authenticated. Please log in again.");
+      return;
+    }
+
+    if (!event_id) {
+      Alert.alert("Error", "Event ID is missing.");
+      return;
+    }
+
     setIsCreating(true);
 
     try {
-      // Mock API call - Create post
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      const postData = {
+      // Create post via API
+      console.log("Creating post for event:", event_id);
+      const postResponse = await createPost({
         event_id: event_id,
-        poster_id: "current-user", // Mock user ID
+        poster_id: uuid,
         title: title.trim(),
         description: description.trim(),
-      };
+      });
 
-      console.log("Creating post:", postData);
-
-      // Mock response
-      const mockPostResponse = {
-        post_id: `post-${Date.now()}`,
-        ...postData,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-
-      console.log("Post created:", mockPostResponse);
+      console.log("Post created successfully:", postResponse);
 
       // If there are pictures, add them to the post
       if (pictures.length > 0) {
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        console.log(`Adding ${pictures.length} pictures to post...`);
 
-        for (const pictureUrl of pictures) {
-          const pictureData = {
-            uploader_id: "current-user",
+        const picturePromises = pictures.map((pictureUrl) =>
+          addPostPicture(postResponse.post_id, {
+            uploader_id: uuid,
             picture_url: pictureUrl,
-          };
+          })
+        );
 
-          console.log(
-            `Adding picture to post ${mockPostResponse.post_id}:`,
-            pictureData
-          );
-
-          // Mock picture response
-          const mockPictureResponse = {
-            picture_id: `pic-${Date.now()}-${Math.random()}`,
-            post_id: mockPostResponse.post_id,
-            picture_url: pictureUrl,
-            uploaded_at: new Date().toISOString(),
-          };
-
-          console.log("Picture added:", mockPictureResponse);
-        }
+        await Promise.all(picturePromises);
+        console.log("All pictures added successfully");
       }
 
       Alert.alert("Success", "Post created successfully!", [
@@ -149,7 +139,12 @@ export default function CreatePostScreen() {
       ]);
     } catch (error) {
       console.error("Error creating post:", error);
-      Alert.alert("Error", "Failed to create post. Please try again.");
+      Alert.alert(
+        "Error",
+        error instanceof Error
+          ? error.message
+          : "Failed to create post. Please try again."
+      );
     } finally {
       setIsCreating(false);
     }
