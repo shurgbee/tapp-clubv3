@@ -45,6 +45,12 @@
         {
           "nfcPermission": "Allow TappClub to use NFC to connect with friends"
         }
+      ],
+      [
+        "react-native-auth0",
+        {
+          "domain": "dev-y82fiz0xbrxbwxfc.us.auth0.com"
+        }
       ]
     ],
     "experiments": {

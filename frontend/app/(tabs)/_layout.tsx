@@ -1,5 +1,6 @@
 import { Tabs } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { Auth0Provider } from "react-native-auth0";
 
 export default function TabsLayout() {
   return (
