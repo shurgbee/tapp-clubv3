@@ -118,3 +118,61 @@ export async function getEventDetails(eventId: string): Promise<EventDetails> {
     throw error;
   }
 }
+
+export interface UpdateUserRequest {
+  username?: string;
+  location?: string;
+  calendar_json_id?: string;
+  pfp?: string;
+  description?: string;
+}
+
+export interface UpdateUserResponse {
+  user_id: string;
+  username: string;
+  location: string | null;
+  calendar_json_id: string | null;
+  pfp: string | null;
+  description: string | null;
+  auth0_sub: string;
+}
+
+export async function updateUserProfile(
+  userId: string,
+  updateData: UpdateUserRequest
+): Promise<UpdateUserResponse> {
+  const url = `${API_BASE_URL}/users/${userId}`;
+  const startTime = Date.now();
+
+  logRequest("PATCH", url, updateData);
+
+  try {
+    const response = await fetch(url, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(updateData),
+    });
+
+    const duration = Date.now() - startTime;
+    console.log(`⏱️  Request completed in ${duration}ms`);
+
+    if (!response.ok) {
+      logResponse(url, response.status);
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        errorData.detail ||
+          `Failed to update profile: ${response.status} ${response.statusText}`
+      );
+    }
+
+    const data = await response.json();
+    logResponse(url, response.status, data);
+
+    return data;
+  } catch (error) {
+    logError(url, error);
+    throw error;
+  }
+}

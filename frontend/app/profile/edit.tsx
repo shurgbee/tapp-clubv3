@@ -15,34 +15,44 @@ import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { uploadImageToR2 } from "../../utils/r2Upload";
-
-// Mock current user data
-const mockCurrentUser = {
-  user_id: "current-user",
-  name: "Davis Johnson",
-  username: "davis_j",
-  pfp: "https://i.pravatar.cc/150?img=33",
-  description: "Love hiking, coffee, and live music 🎵",
-  location: "San Francisco, CA",
-};
+import { getUserProfile, updateUserProfile } from "../../api/users";
+import { useAuth } from "../../contexts/AuthContext";
 
 export default function EditProfileScreen() {
   const router = useRouter();
+  const { uuid, user } = useAuth();
 
-  const [name, setName] = useState(mockCurrentUser.name);
-  const [username, setUsername] = useState(mockCurrentUser.username);
-  const [description, setDescription] = useState(
-    mockCurrentUser.description || ""
-  );
-  const [profileImage, setProfileImage] = useState<string | null>(
-    mockCurrentUser.pfp
-  );
-  const [location, setLocation] = useState<string | null>(
-    mockCurrentUser.location
-  );
+  const [username, setUsername] = useState("");
+  const [description, setDescription] = useState("");
+  const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [location, setLocation] = useState<string | null>(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+
+  // Load current user profile
+  useEffect(() => {
+    const loadProfile = async () => {
+      if (!uuid) return;
+
+      setIsLoadingProfile(true);
+      try {
+        const profile = await getUserProfile(uuid);
+        setUsername(profile.username);
+        setDescription(profile.description || "");
+        setProfileImage(profile.pfp || null);
+        // Note: location is not in the profile response, we'll need to add it if needed
+      } catch (error) {
+        console.error("Error loading profile:", error);
+        Alert.alert("Error", "Failed to load profile data");
+      } finally {
+        setIsLoadingProfile(false);
+      }
+    };
+
+    loadProfile();
+  }, [uuid]);
 
   const pickImage = async () => {
     try {
@@ -128,30 +138,31 @@ export default function EditProfileScreen() {
 
   const handleSave = async () => {
     // Validation
-    if (!name.trim()) {
-      Alert.alert("Required Field", "Please enter your name.");
-      return;
-    }
-
     if (!username.trim()) {
       Alert.alert("Required Field", "Please enter a username.");
       return;
     }
 
+    if (!uuid) {
+      Alert.alert("Error", "User not authenticated. Please log in again.");
+      return;
+    }
+
     setIsSaving(true);
 
-    // Mock API call
     try {
-      // Simulate API delay
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Build update payload (only send fields that were changed)
+      const updateData: any = {};
 
-      console.log("Saving profile:", {
-        name: name.trim(),
-        username: username.trim(),
-        description: description.trim(),
-        profileImage,
-        location,
-      });
+      if (username.trim()) updateData.username = username.trim();
+      if (description.trim()) updateData.description = description.trim();
+      if (location) updateData.location = location;
+      if (profileImage) updateData.pfp = profileImage;
+
+      console.log("Updating profile with data:", updateData);
+
+      const result = await updateUserProfile(uuid, updateData);
+      console.log("Profile updated successfully:", result);
 
       Alert.alert("Success", "Profile updated successfully!", [
         {
@@ -161,7 +172,12 @@ export default function EditProfileScreen() {
       ]);
     } catch (error: any) {
       console.error("Error updating profile:", error);
-      Alert.alert("Error", "Failed to update profile. Please try again.");
+      Alert.alert(
+        "Error",
+        error instanceof Error
+          ? error.message
+          : "Failed to update profile. Please try again."
+      );
     } finally {
       setIsSaving(false);
     }
@@ -170,6 +186,19 @@ export default function EditProfileScreen() {
   const handleCancel = () => {
     router.back();
   };
+
+  // Show loading state while fetching profile
+  if (isLoadingProfile) {
+    return (
+      <>
+        <Stack.Screen options={{ title: "Edit Profile" }} />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#6366f1" />
+          <Text style={styles.loadingText}>Loading profile...</Text>
+        </View>
+      </>
+    );
+  }
 
   return (
     <>
@@ -236,20 +265,6 @@ export default function EditProfileScreen() {
               {isUploadingImage ? "Uploading..." : "Tap to change photo"}
             </Text>
           </View>
-        </View>
-
-        {/* Name Field */}
-        <View style={styles.section}>
-          <Text style={styles.label}>
-            Name <Text style={styles.required}>*</Text>
-          </Text>
-          <TextInput
-            style={styles.input}
-            value={name}
-            onChangeText={setName}
-            placeholder="Enter your name"
-            placeholderTextColor="#9ca3af"
-          />
         </View>
 
         {/* Username Field */}
@@ -352,6 +367,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#f9fafb",
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#f9fafb",
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: "#6b7280",
   },
   content: {
     padding: 20,

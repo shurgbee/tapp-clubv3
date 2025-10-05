@@ -257,7 +257,7 @@ class EventPreview(BaseModel):
 class UserProfile(BaseModel):
     user_id: uuid.UUID
     username: str
-    pfp: Optional[uuid.UUID]
+    pfp: Optional[str]
     description: Optional[str]
     friend_count: int
     event_count: int
@@ -286,7 +286,7 @@ class EventPictureResponse(BaseModel):
 class User(BaseModel):
     user_id: uuid.UUID
     username: str
-    pfp: Optional[uuid.UUID]
+    pfp: Optional[str]
     description: Optional[str]
     sub: str
 
@@ -300,7 +300,7 @@ class User(BaseModel):
 class EventAttendee(BaseModel):
     user_id: uuid.UUID
     username: str
-    pfp: Optional[uuid.UUID]
+    pfp: Optional[str]
 
 class EventPictureDetail(BaseModel):
     picture_id: uuid.UUID
@@ -340,20 +340,20 @@ class UserAuthResponse(BaseModel):
 
 
 class UserUpdateRequest(BaseModel):
-    
+
     username: Optional[str] = None
     location: Optional[str] = None
     calendar_json_id: Optional[uuid.UUID] = None
-    pfp: Optional[uuid.UUID] = None
+    pfp: Optional[str] = None
     description: Optional[str] = None
 
 class UserUpdateResponse(BaseModel):
-    
+
     user_id: uuid.UUID
     username: str
     location: Optional[str]
     calendar_json_id: Optional[uuid.UUID]
-    pfp: Optional[uuid.UUID]
+    pfp: Optional[str]
     description: Optional[str]
     auth0_sub: str
 
@@ -419,7 +419,7 @@ class PostPictureDetail(BaseModel):
 class PosterInfo(BaseModel):
     user_id: uuid.UUID
     username: str
-    pfp: Optional[uuid.UUID]
+    pfp: Optional[str]
 
 class PostDetailResponse(BaseModel):
     post_id: uuid.UUID
