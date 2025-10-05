@@ -1,6 +1,8 @@
 # main.py
 import os
 import uuid
+import json
+import requests
 from datetime import datetime, timezone
 from collections import defaultdict
 from typing import List, Optional
@@ -12,6 +14,31 @@ from pydantic import BaseModel, HttpUrl
 import uuid
 # Load environment variables from .env file
 load_dotenv()
+from google import genai
+from google.genai.types import (
+    GenerateContentConfig,
+    GoogleSearch,
+    GoogleMaps,
+    HttpOptions,
+    Tool,
+)
+import base64
+import os
+
+try:
+    # Initialize the Gemini client with API key
+    # Use GEMINI_API_KEY for the public Gemini API (not Vertex AI)
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    if not GEMINI_API_KEY:
+        raise ValueError("GEMINI_API_KEY not found in environment variables")
+    
+    client = genai.Client(api_key=GEMINI_API_KEY)
+    
+    MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
+    if not MAPS_API_KEY:
+        raise ValueError("GOOGLE_MAPS_API_KEY not found in environment variables")
+except Exception as e:
+    raise RuntimeError(f"Failed to initialize clients: {e}")
 
 # --- Configuration ---
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -23,6 +50,99 @@ app = FastAPI(
     title="Chat API",
     description="API for fetching user chats from a Neon database."
 )
+def search_places(query: str) -> str:
+    """
+    Finds places like restaurants or landmarks based on a search query.
+    Returns a list of places with their names, addresses, and ratings.
+    """
+    try:
+        url = f"https://maps.googleapis.com/maps/api/place/textsearch/json?query={query}&key={MAPS_API_KEY}"
+        response = requests.get(url)
+        places_result = response.json()
+        
+        if places_result and 'results' in places_result:
+            top_places = places_result['results'][:5] # Keep it concise for the model
+            formatted_places = [
+                {
+                    "name": place.get("name"),
+                    "address": place.get("formatted_address"),
+                    "rating": place.get("rating"),
+                } for place in top_places
+            ]
+            return json.dumps(formatted_places)
+        return "No places found."
+    except Exception as e:
+        return f"Error searching for places: {e}"
+
+def search_info(query: str) -> str:
+    """
+    Provides up to date info from Google Search
+    """
+    response = client.models.generate_content(
+        model='gemini-2.0-flash-exp',
+        contents=query,
+        config=GenerateContentConfig(
+            tools=[Tool(google_search=GoogleSearch())],
+            temperature=0.7,
+        )
+    )
+    return response.text
+
+def get_directions(origin: str, destination: str) -> str:
+    """
+    Provides step-by-step directions between an origin and a destination.
+    Returns the duration, distance, and key steps for the route.
+    """
+    try:
+        url = f"https://maps.googleapis.com/maps/api/directions/json?origin={origin}&destination={destination}&mode=driving&key={MAPS_API_KEY}"
+        response = requests.get(url)
+        directions_result = response.json()
+        
+        if directions_result and 'routes' in directions_result and directions_result['routes']:
+            leg = directions_result['routes'][0]['legs'][0]
+            summary = {
+                "duration": leg['duration']['text'],
+                "distance": leg['distance']['text'],
+                "steps": [step['html_instructions'].replace("<b>", "").replace("</b>", "") for step in leg['steps'][:5]]
+            }
+            return json.dumps(summary)
+        return "Could not find directions."
+    except Exception as e:
+        return f"Error getting directions: {e}"
+
+
+# --- 3. CREATE THE MODULAR AGENT FUNCTION ---
+# This is the core logic, encapsulated into a single, reusable function.
+
+async def run_gemini_agent(prompt: str) -> str:
+    """
+    Runs the full agentic process with Gemini.
+
+    Args:
+        prompt: The user's input query.
+
+    Returns:
+        The final textual response from the agent.
+    """
+    try:
+        # First, call Gemini with just Google Search grounding to get a smart response
+        # that can access real-time information
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+            config=GenerateContentConfig(
+                #No maps stuff for now
+                tools=[Tool(google_search=GoogleSearch())],
+                temperature=0.7,
+            )
+        )
+        
+        # The response will include search-grounded results
+        # which can answer most queries about places, directions, and general info
+        return response.text
+        
+    except Exception as e:
+        raise Exception(f"Gemini API error: {str(e)}")
 
 # --- Database Connection Pool ---
 DB_POOL = None
@@ -46,7 +166,9 @@ async def shutdown():
 # --- FIX 1: RE-ADDED THE MISSING get_db_connection FUNCTION ---
 # This function must be defined before the API endpoints that use it.
 # ==================================================================
-async def get_db_connection() -> asyncpg.Connection:
+from typing import AsyncGenerator
+
+async def get_db_connection() -> AsyncGenerator[asyncpg.Connection, None]:
     """Dependency to get a connection from the pool."""
     if not DB_POOL:
         raise HTTPException(status_code=503, detail="Database connection pool is not available.")
@@ -133,7 +255,10 @@ class UserProfile(BaseModel):
     event_count: int
     latest_events: List[EventPreview]
 
-
+class AgentResponse(BaseModel):
+    message: str
+    dateTime: datetime
+    links: List[str]
     
 
 class EventPictureCreate(BaseModel):
@@ -420,6 +545,27 @@ async def update_friend_request(
 
 
     # Add this new endpoint to your main.py file
+
+@app.get("/agent/", response_model=str)
+async def getAgentResponse(
+    request: str
+):
+    """
+    Endpoint to interact with the Gemini agent.
+    It takes a user prompt, gets the agent's response, and returns it.
+    """
+    if not request:
+        raise HTTPException(status_code=400, detail="Prompt cannot be empty")
+    
+    try:
+        # Call our modular agent function to handle the logic
+        agent_response = await run_gemini_agent(request)
+        return agent_response
+    except Exception as e:
+        # Handle potential errors gracefully
+        raise HTTPException(status_code=500, detail=f"An internal error occurred: {str(e)}")
+    return None
+
 
 @app.get("/users/{user_id}/profile", response_model=UserProfile)
 async def get_user_profile(
