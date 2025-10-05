@@ -8,6 +8,7 @@ import {
   Animated,
   Dimensions,
   Easing,
+  Image,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 
@@ -165,12 +166,19 @@ export function FriendSuccessPopup({
             <View style={styles.profileContent}>
               <View style={styles.profilePicture}>
                 <View style={styles.profileCircle}>
-                  <Text style={styles.profileInitial}>
-                    {friendData.name.charAt(0).toUpperCase()}
-                  </Text>
+                  <Image
+                    source={{
+                      uri: "https://cdn.discordapp.com/attachments/1418061830181359707/1424426773986279606/20251005_110258.jpg?ex=68e3e84f&is=68e296cf&hm=ccecbb489ddcfdb56d2a4887bd5094f6d99b6c6bdf83590f79c76aa9c0f8dfa2&",
+                    }}
+                    style={styles.profileImage}
+                    resizeMode="cover"
+                  />
                 </View>
               </View>
               <Text style={styles.profileName}>{friendData.name}</Text>
+              <Text style={styles.profileTagline}>
+                New friend added! Say hi 👋
+              </Text>
 
               {/* Close Button */}
               <Pressable style={styles.acceptButton} onPress={onClose}>
@@ -269,11 +277,23 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 6,
     borderColor: "rgba(255, 255, 255, 0.4)",
+    overflow: "hidden",
+  },
+  profileImage: {
+    width: 228,
+    height: 228,
+    borderRadius: 114,
   },
   profileInitial: {
     fontSize: 80,
     fontWeight: "900",
     color: "#C2185B",
+  },
+  profileTagline: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#7A1338",
+    marginTop: 8,
   },
   profileName: {
     fontSize: 32,

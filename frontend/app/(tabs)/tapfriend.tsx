@@ -184,7 +184,7 @@ export default function TapFriendScreen() {
                 onPress={() => {
                   setFriendData({
                     uuid: "test-123",
-                    name: "Test User",
+                    name: "Sragvee",
                     slug: "testuser",
                   });
                   setShowSuccessPopup(true);
