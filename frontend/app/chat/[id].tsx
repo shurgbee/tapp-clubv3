@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -9,142 +9,115 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import { useLocalSearchParams, Stack } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import dayjs from "dayjs";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useAuth } from "../../contexts/AuthContext";
+import { getGroupMessages, sendMessage, ChatMessage } from "../../api";
 
-// Mock messages data
-const mockMessages: { [key: string]: any[] } = {
-  g1: [
-    {
-      id: "m1",
-      poster_id: "user1",
-      posterName: "Joshua Lee",
-      posterPfp: "https://i.pravatar.cc/150?img=12",
-      messageType: "text",
-      messageContent: "Hey everyone! Should we plan another trip soon?",
-      createdAt: "2024-03-18T14:00:00Z",
-      isMe: false,
-    },
-    {
-      id: "m2",
-      poster_id: "current-user",
-      posterName: "You",
-      posterPfp: "https://i.pravatar.cc/150?img=33",
-      messageType: "text",
-      messageContent: "Yes! I'm thinking about visiting Korea next",
-      createdAt: "2024-03-18T14:15:00Z",
-      isMe: true,
-    },
-    {
-      id: "m3",
-      poster_id: "user2",
-      posterName: "Sarah Chen",
-      posterPfp: "https://i.pravatar.cc/150?img=5",
-      messageType: "text",
-      messageContent: "Count me in! 🇰🇷",
-      createdAt: "2024-03-18T14:20:00Z",
-      isMe: false,
-    },
-    {
-      id: "m4",
-      poster_id: "current-user",
-      posterName: "You",
-      posterPfp: "https://i.pravatar.cc/150?img=33",
-      messageType: "text",
-      messageContent: "@Larry can you suggest good places to visit in Seoul?",
-      createdAt: "2024-03-18T15:00:00Z",
-      isMe: true,
-    },
-    {
-      id: "m5",
-      poster_id: "larry",
-      posterName: "Larry (AI)",
-      posterPfp: "https://api.dicebear.com/7.x/bottts/png?seed=larry",
-      messageType: "text",
-      messageContent:
-        "Great choice! Here are some must-visit places in Seoul:\n\n1. Gyeongbokgung Palace - Historic royal palace\n2. Bukchon Hanok Village - Traditional Korean houses\n3. Myeongdong - Shopping and street food\n4. N Seoul Tower - Panoramic city views\n5. Hongdae - Art and nightlife district\n\nWould you like more specific recommendations?",
-      createdAt: "2024-03-18T15:00:30Z",
-      isMe: false,
-    },
-    {
-      id: "m6",
-      poster_id: "user1",
-      posterName: "Joshua Lee",
-      posterPfp: "https://i.pravatar.cc/150?img=12",
-      messageType: "text",
-      messageContent: "Can't wait for next trip!",
-      createdAt: "2024-03-18T15:30:00Z",
-      isMe: false,
-    },
-  ],
-  larry: [
-    {
-      id: "lm1",
-      poster_id: "larry",
-      posterName: "Larry (AI)",
-      posterPfp: "https://api.dicebear.com/7.x/bottts/png?seed=larry",
-      messageType: "text",
-      messageContent:
-        "Hi! I'm Larry, your AI assistant. I can help you with event planning, suggestions, and more. Just mention me with @Larry in any group chat!",
-      createdAt: "2024-03-15T09:00:00Z",
-      isMe: false,
-    },
-  ],
-};
+interface MessageWithUI extends ChatMessage {
+  id: string;
+  isMe: boolean;
+  posterPfp?: string;
+}
 
 export default function ChatDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const [messages, setMessages] = useState(mockMessages[id] || []);
+  const { uuid } = useAuth();
+  const flatListRef = useRef<FlatList>(null);
+  const [messages, setMessages] = useState<MessageWithUI[]>([]);
   const [inputText, setInputText] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [groupName, setGroupName] = useState("Chat");
 
-  const groupName =
-    id === "larry" ? "Larry (AI Assistant)" : "Tokyo Trip Squad";
+  const fetchMessages = useCallback(async () => {
+    if (!id || !uuid) return;
 
-  const handleSend = () => {
-    if (!inputText.trim()) return;
+    try {
+      const data = await getGroupMessages(id);
 
-    const newMessage = {
-      id: `temp-${Date.now()}`,
-      poster_id: "current-user",
-      posterName: "You",
-      posterPfp: "https://i.pravatar.cc/150?img=33",
-      messageType: "text",
-      messageContent: inputText,
-      createdAt: new Date().toISOString(),
-      isMe: true,
-    };
+      // Transform messages to include UI properties
+      const messagesWithUI: MessageWithUI[] = data.map((msg, index) => ({
+        ...msg,
+        id: `${msg.poster_id}-${msg.dateTime}-${index}`,
+        isMe: msg.poster_id === uuid,
+        posterPfp: `https://api.dicebear.com/7.x/avataaars/png?seed=${msg.poster_id}`,
+      }));
 
-    setMessages([...messages, newMessage]);
+      setMessages(messagesWithUI);
+
+      // Extract group name from first message or use default
+      if (messagesWithUI.length > 0) {
+        // Group name should come from a separate API call, but for now use a placeholder
+        setGroupName("Group Chat");
+      }
+    } catch (error) {
+      console.error("Error fetching messages:", error);
+      Alert.alert("Error", "Failed to load messages");
+    } finally {
+      setLoading(false);
+    }
+  }, [id, uuid]);
+
+  useEffect(() => {
+    fetchMessages();
+  }, [fetchMessages]);
+
+  const handleSend = async () => {
+    if (!inputText.trim() || !uuid || !id || sending) return;
+
+    const messageText = inputText.trim();
+    setSending(true);
     setInputText("");
 
-    // Mock Larry response if @Larry is mentioned
-    if (inputText.toLowerCase().includes("@larry") || id === "larry") {
+    try {
+      const sentMessage = await sendMessage(id, {
+        user_id: uuid,
+        messageType: "text",
+        messageContent: messageText,
+      });
+
+      const newMessage: MessageWithUI = {
+        ...sentMessage,
+        id: `${sentMessage.poster_id}-${sentMessage.dateTime}-${Date.now()}`,
+        isMe: true,
+        posterPfp: `https://api.dicebear.com/7.x/avataaars/png?seed=${uuid}`,
+      };
+
+      setMessages((prev) => [...prev, newMessage]);
+
+      // Scroll to bottom after sending
       setTimeout(() => {
-        const larryResponse = {
-          id: `larry-${Date.now()}`,
-          poster_id: "larry",
-          posterName: "Larry (AI)",
-          posterPfp: "https://api.dicebear.com/7.x/bottts/png?seed=larry",
-          messageType: "text",
-          messageContent:
-            "I received your message! In a real app, I would process your request and provide helpful suggestions. This is a mock response for demonstration.",
-          createdAt: new Date().toISOString(),
-          isMe: false,
-        };
-        setMessages((prev) => [...prev, larryResponse]);
-      }, 1000);
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    } catch (error) {
+      console.error("Error sending message:", error);
+      Alert.alert("Error", "Failed to send message");
+      setInputText(messageText); // Restore the message
+    } finally {
+      setSending(false);
     }
   };
 
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <Stack.Screen options={{ title: groupName }} />
+        <View style={[styles.container, styles.centerContent]}>
+          <ActivityIndicator size="large" color="#6366f1" />
+          <Text style={styles.loadingText}>Loading messages...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
-    <>
-    <SafeAreaView
-      style={styles.container}
-      mode="padding"
-      >
+    <SafeAreaView style={styles.container} mode="padding">
       <Stack.Screen
         options={{
           title: groupName,
@@ -156,87 +129,112 @@ export default function ChatDetailScreen() {
         keyboardVerticalOffset={90}
       >
         <FlatList
-        data={messages}
-        keyExtractor={(item) => item.id}
-        style={styles.messagesList}
-        contentContainerStyle={styles.messagesContent}
-        renderItem={({ item }) => (
-          <View
-            style={[
-              styles.messageContainer,
-              item.isMe
-                ? styles.myMessageContainer
-                : styles.otherMessageContainer,
-            ]}
-          >
-            {!item.isMe && (
-              <Image
-                source={{ uri: item.posterPfp }}
-                style={styles.messageAvatar}
+          ref={flatListRef}
+          data={messages}
+          keyExtractor={(item) => item.id}
+          style={styles.messagesList}
+          contentContainerStyle={styles.messagesContent}
+          onContentSizeChange={() =>
+            flatListRef.current?.scrollToEnd({ animated: false })
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <MaterialCommunityIcons
+                name="message-text-outline"
+                size={64}
+                color="#d1d5db"
               />
-            )}
-
+              <Text style={styles.emptyText}>No messages yet</Text>
+              <Text style={styles.emptySubtext}>Start the conversation!</Text>
+            </View>
+          }
+          renderItem={({ item }) => (
             <View
               style={[
-                styles.messageBubble,
-                item.isMe ? styles.myMessage : styles.otherMessage,
+                styles.messageContainer,
+                item.isMe
+                  ? styles.myMessageContainer
+                  : styles.otherMessageContainer,
               ]}
             >
               {!item.isMe && (
-                <Text style={styles.messageSender}>{item.posterName}</Text>
+                <Image
+                  source={{ uri: item.posterPfp }}
+                  style={styles.messageAvatar}
+                />
               )}
-              <Text
-                style={[styles.messageText, item.isMe && styles.myMessageText]}
+
+              <View
+                style={[
+                  styles.messageBubble,
+                  item.isMe ? styles.myMessage : styles.otherMessage,
+                ]}
               >
-                {item.messageContent}
-              </Text>
-              <Text
-                style={[styles.messageTime, item.isMe && styles.myMessageTime]}
-              >
-                {dayjs(item.createdAt).format("h:mm A")}
-              </Text>
+                {!item.isMe && (
+                  <Text style={styles.messageSender}>{item.poster_name}</Text>
+                )}
+                <Text
+                  style={[
+                    styles.messageText,
+                    item.isMe && styles.myMessageText,
+                  ]}
+                >
+                  {item.messageContent}
+                </Text>
+                <Text
+                  style={[
+                    styles.messageTime,
+                    item.isMe && styles.myMessageTime,
+                  ]}
+                >
+                  {dayjs(item.dateTime).format("h:mm A")}
+                </Text>
+              </View>
+
+              {item.isMe && <View style={styles.avatarPlaceholder} />}
             </View>
-
-            {item.isMe && <View style={styles.avatarPlaceholder} />}
-          </View>
-        )}
-      />
-
-      {/* Input Bar */}
-      <View style={styles.inputContainer}>
-        <Pressable style={styles.attachButton}>
-          <MaterialCommunityIcons
-            name="plus-circle"
-            size={24}
-            color="#6366f1"
-          />
-        </Pressable>
-
-        <TextInput
-          style={styles.input}
-          placeholder="Type a message..."
-          placeholderTextColor="#9ca3af"
-          value={inputText}
-          onChangeText={setInputText}
-          multiline
-          maxLength={500}
+          )}
         />
 
-        <Pressable
-          style={styles.sendButton}
-          onPress={handleSend}
-          disabled={!inputText.trim()}
-        >
-          <MaterialCommunityIcons
-            name="send"
-            size={24}
-            color={inputText.trim() ? "#6366f1" : "#d1d5db"}
+        {/* Input Bar */}
+        <View style={styles.inputContainer}>
+          <Pressable style={styles.attachButton}>
+            <MaterialCommunityIcons
+              name="plus-circle"
+              size={24}
+              color="#6366f1"
+            />
+          </Pressable>
+
+          <TextInput
+            style={styles.input}
+            placeholder="Type a message..."
+            placeholderTextColor="#9ca3af"
+            value={inputText}
+            onChangeText={setInputText}
+            multiline
+            maxLength={500}
+            editable={!sending}
           />
-        </Pressable>
-      </View>
+
+          <Pressable
+            style={styles.sendButton}
+            onPress={handleSend}
+            disabled={!inputText.trim() || sending}
+          >
+            {sending ? (
+              <ActivityIndicator size="small" color="#6366f1" />
+            ) : (
+              <MaterialCommunityIcons
+                name="send"
+                size={24}
+                color={inputText.trim() ? "#6366f1" : "#d1d5db"}
+              />
+            )}
+          </Pressable>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
-    </>
   );
 }
 
@@ -245,11 +243,38 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#ffffff",
   },
+  centerContent: {
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: "#6b7280",
+  },
   messagesList: {
     // flex: 1,
   },
   messagesContent: {
     padding: 16,
+    flexGrow: 1,
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 100,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#374151",
+    marginTop: 16,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: "#6b7280",
+    marginTop: 8,
   },
   messageContainer: {
     flexDirection: "row",

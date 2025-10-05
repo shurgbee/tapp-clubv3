@@ -1,3 +1,4 @@
+import { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -5,90 +6,118 @@ import {
   FlatList,
   Pressable,
   Image,
+  ActivityIndicator,
+  RefreshControl,
 } from "react-native";
-import { Link } from "expo-router";
+import { Link, useRouter } from "expo-router";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
+import { useAuth } from "../../contexts/AuthContext";
+import { getUserConversations, GroupPreview } from "../../api";
 
 dayjs.extend(relativeTime);
 
-// Mock conversation data
-const mockConversations = [
-  {
-    group_id: "g1",
-    name: "Tokyo Trip Squad",
-    pfp: "https://i.pravatar.cc/150?img=1",
-    lastMessage: {
-      text: "Can't wait for next trip!",
-      createdAt: "2024-03-18T15:30:00Z",
-      sender: "Joshua",
-    },
-    unreadCount: 2,
-  },
-  {
-    group_id: "g2",
-    name: "Beach Party Crew",
-    pfp: "https://i.pravatar.cc/150?img=2",
-    lastMessage: {
-      text: "That was so fun! 🏖️",
-      createdAt: "2024-03-17T20:15:00Z",
-      sender: "Sarah",
-    },
-    unreadCount: 0,
-  },
-  {
-    group_id: "g3",
-    name: "Tech Conference Friends",
-    pfp: "https://i.pravatar.cc/150?img=3",
-    lastMessage: {
-      text: "Did you get the slides?",
-      createdAt: "2024-03-16T10:45:00Z",
-      sender: "Alex",
-    },
-    unreadCount: 5,
-  },
-  {
-    group_id: "larry",
-    name: "Larry (AI Assistant)",
-    pfp: "https://api.dicebear.com/7.x/bottts/png?seed=larry",
-    lastMessage: {
-      text: "How can I help you today?",
-      createdAt: "2024-03-15T09:00:00Z",
-      sender: "Larry",
-    },
-    unreadCount: 0,
-  },
-];
-
 export default function ChatListScreen() {
+  const { uuid } = useAuth();
+  const router = useRouter();
+  const [conversations, setConversations] = useState<GroupPreview[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchConversations = useCallback(async () => {
+    if (!uuid) return;
+
+    try {
+      setError(null);
+      const data = await getUserConversations(uuid);
+      setConversations(data);
+    } catch (err) {
+      console.error("Error loading conversations:", err);
+      setError("Failed to load conversations");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [uuid]);
+
+  useEffect(() => {
+    fetchConversations();
+  }, [fetchConversations]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchConversations();
+  }, [fetchConversations]);
+
+  const handleCreateGroup = () => {
+    // TODO: Navigate to group creation screen
+    console.log("Create new group");
+  };
+
+  if (loading && !refreshing) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <ActivityIndicator size="large" color="#6366f1" />
+        <Text style={styles.loadingText}>Loading conversations...</Text>
+      </View>
+    );
+  }
+
+  if (error && !refreshing) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <MaterialCommunityIcons name="alert-circle" size={64} color="#ef4444" />
+        <Text style={styles.errorText}>{error}</Text>
+        <Pressable style={styles.retryButton} onPress={fetchConversations}>
+          <Text style={styles.retryButtonText}>Retry</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <FlatList
-        data={mockConversations}
+        data={conversations}
         keyExtractor={(item) => item.group_id}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
         renderItem={({ item }) => (
           <Link href={`/chat/${item.group_id}`} asChild>
             <Pressable style={styles.conversationCard}>
               {/* Avatar */}
-              <Image source={{ uri: item.pfp }} style={styles.avatar} />
+              <Image
+                source={{
+                  uri:
+                    item.pfp ||
+                    `https://api.dicebear.com/7.x/shapes/png?seed=${item.group_id}`,
+                }}
+                style={styles.avatar}
+              />
 
               {/* Conversation Info */}
               <View style={styles.conversationInfo}>
                 <View style={styles.conversationHeader}>
-                  <Text style={styles.groupName}>{item.name}</Text>
-                  <Text style={styles.timestamp}>
-                    {dayjs(item.lastMessage.createdAt).fromNow()}
-                  </Text>
+                  <Text style={styles.groupName}>{item.group_name}</Text>
+                  {item.last_message_timestamp && (
+                    <Text style={styles.timestamp}>
+                      {dayjs(item.last_message_timestamp).fromNow()}
+                    </Text>
+                  )}
                 </View>
                 <View style={styles.lastMessageRow}>
-                  <Text style={styles.lastMessage} numberOfLines={1}>
-                    {item.lastMessage.sender}: {item.lastMessage.text}
-                  </Text>
-                  {item.unreadCount > 0 && (
-                    <View style={styles.unreadBadge}>
-                      <Text style={styles.unreadText}>{item.unreadCount}</Text>
-                    </View>
+                  {item.last_message_content ? (
+                    <Text style={styles.lastMessage} numberOfLines={1}>
+                      {item.last_message_poster_name}:{" "}
+                      {item.last_message_content}
+                    </Text>
+                  ) : (
+                    <Text style={[styles.lastMessage, styles.noMessages]}>
+                      No messages yet
+                    </Text>
                   )}
                 </View>
               </View>
@@ -118,7 +147,7 @@ export default function ChatListScreen() {
       />
 
       {/* New Group Button */}
-      <Pressable style={styles.fab}>
+      <Pressable style={styles.fab} onPress={handleCreateGroup}>
         <MaterialCommunityIcons name="plus" size={24} color="#fff" />
       </Pressable>
     </View>
@@ -129,6 +158,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#f9fafb",
+  },
+  centerContent: {
+    justifyContent: "center",
+    alignItems: "center",
   },
   conversationCard: {
     flexDirection: "row",
@@ -173,6 +206,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#6b7280",
   },
+  noMessages: {
+    fontStyle: "italic",
+  },
   unreadBadge: {
     backgroundColor: "#6366f1",
     borderRadius: 10,
@@ -204,6 +240,30 @@ const styles = StyleSheet.create({
     color: "#6b7280",
     marginTop: 8,
     textAlign: "center",
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: "#6b7280",
+  },
+  errorText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: "#ef4444",
+    textAlign: "center",
+    paddingHorizontal: 32,
+  },
+  retryButton: {
+    marginTop: 16,
+    backgroundColor: "#6366f1",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
   },
   fab: {
     position: "absolute",
