@@ -210,25 +210,34 @@ export async function addMembersToGroup(
 /**
  * Call the AI agent (Larry) with a prompt
  */
-export async function callLarryAgent(prompt: string): Promise<string> {
-  const url = `${API_BASE_URL}/agent/?request=${encodeURIComponent(prompt)}`;
-  console.log("[API] Calling Larry agent:", url);
+export async function callLarryAgent(
+  groupId: string,
+  prompt: string
+): Promise<string> {
+  const url = `${API_BASE_URL}/agent/${groupId}`;
+  console.log("[API] Calling Larry agent:", url, { prompt });
 
   try {
     const response = await fetch(url, {
-      method: "GET",
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        prompt: prompt,
+      }),
     });
 
     if (!response.ok) {
-      const error = await response
-        .json()
-        .catch(() => ({ detail: "Failed to get AI response" }));
+      const errorText = await response.json();
+      console.error("[API] Larry agent error response:", errorText);
       throw new Error(
-        error.detail || `Failed to get AI response: ${response.status}`
+        `Failed to get AI response: ${response.status} ${response.statusText}`
       );
     }
 
-    const data = await response.json();
+    // The API returns plain text, not JSON
+    const data = await response.text();
     console.log("[API] Larry agent response:", data);
     return data;
   } catch (error) {

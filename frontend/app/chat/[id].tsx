@@ -134,8 +134,8 @@ export default function ChatDetailScreen() {
     try {
       console.log("🤖 Larry is thinking...");
 
-      // Call the AI agent
-      const aiResponse = await callLarryAgent(userMessage);
+      // Call the AI agent with group ID
+      const aiResponse = await callLarryAgent(id, userMessage);
 
       // Create Larry's message (display only, not saved to backend)
       // We don't post to backend because Larry user may not exist in DB
