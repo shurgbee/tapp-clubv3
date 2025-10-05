@@ -315,6 +315,18 @@ class PostPictureResponse(BaseModel):
     picture_url: str
     uploaded_at: datetime
 
+# Add these new Pydantic models to your main.py file
+
+class UserTapRequest(BaseModel):
+    # The user initiating the tap
+    tapper_id: uuid.UUID
+    # The user being tapped
+    tapped_id: uuid.UUID
+
+class UserTapResponse(BaseModel):
+    status: str
+    message: str
+
 @app.get("/users/{user_id}/groups", response_model=List[GroupPreview])
 async def get_user_groups(
     user_id: uuid.UUID,
@@ -1293,5 +1305,69 @@ async def add_members_to_event(
     except asyncpg.exceptions.ForeignKeyViolationError:
         
         raise HTTPException(status_code=404, detail="Event or one or more users not found.")
+    except asyncpg.PostgresError as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+    
+# Add this new endpoint to your main.py file
+
+# In main.py, replace your existing tap_user_at_event function with this one
+
+@app.post("/events/{event_id}/tap", response_model=UserTapResponse)
+async def tap_user_at_event(
+    event_id: uuid.UUID,
+    request: UserTapRequest,
+    db: asyncpg.Connection = Depends(get_db_connection)
+):
+    """
+    Records a mutual 'tap' interaction between two users at an event.
+    This sets the 'tapped' boolean to TRUE for BOTH the tapper and the tapped user.
+    The operation is idempotent; it will not error if a user is already tapped.
+    """
+    tapper_id = request.tapper_id
+    tapped_id = request.tapped_id
+
+    if tapper_id == tapped_id:
+        raise HTTPException(status_code=400, detail="A user cannot tap themselves.")
+
+    try:
+        # A transaction ensures all checks and the update happen atomically.
+        async with db.transaction():
+            # --- Security Check ---
+            # Verify that BOTH users are members of the specified event.
+            # We expect to find exactly 2 records.
+            check_membership_query = """
+                SELECT COUNT(*) FROM "eventMembers"
+                WHERE event_id = $1 AND user_id = ANY($2::uuid[]);
+            """
+            member_count = await db.fetchval(
+                check_membership_query,
+                event_id,
+                [tapper_id, tapped_id]
+            )
+
+            if member_count != 2:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Forbidden: Both users must be members of the event to interact."
+                )
+
+            # --- Update Both Users ---
+            # This query updates the 'tapped' status for both users involved
+            # in the interaction within the specified event.
+            update_tap_query = """
+                UPDATE "eventMembers"
+                SET tapped = TRUE
+                WHERE event_id = $1 AND user_id = ANY($2::uuid[]);
+            """
+            await db.execute(update_tap_query, event_id, [tapper_id, tapped_id])
+
+            # Since the operation is now mutual, we return a simple success message.
+            return UserTapResponse(
+                status="tapped",
+                message=f"Tap interaction between user {tapper_id} and {tapped_id} has been successfully recorded."
+            )
+
+    except asyncpg.exceptions.ForeignKeyViolationError:
+        raise HTTPException(status_code=404, detail="Event or one of the users not found.")
     except asyncpg.PostgresError as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
